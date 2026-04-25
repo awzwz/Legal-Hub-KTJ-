@@ -1,0 +1,87 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 220 20% 97%;
+    --foreground: 220 25% 12%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 220 25% 12%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 220 25% 12%;
+
+    --primary: 197 99% 47%;
+    --primary-foreground: 210 40% 98%;
+
+    --secondary: 220 15% 93%;
+    --secondary-foreground: 220 25% 12%;
+
+    --muted: 220 14% 94%;
+    --muted-foreground: 220 10% 46%;
+
+    --accent: 38 92% 50%;
+    --accent-foreground: 38 95% 14%;
+
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 210 40% 98%;
+
+    --success: 160 60% 40%;
+    --success-foreground: 160 60% 98%;
+
+    --warning: 38 92% 50%;
+    --warning-foreground: 38 95% 14%;
+
+    --border: 220 13% 88%;
+    --input: 220 13% 88%;
+    --ring: 220 35% 22%;
+
+    --radius: 0.5rem;
+
+    /* Темно-синий, строгий фон всего левого меню (как форма проводников КТЖ) */
+    --sidebar-background: 215 35% 15%;
+    --sidebar-foreground: 210 40% 90%;
+
+    /* Золотые бейджи (уведомления) */
+    --sidebar-primary: 221 30% 22%;
+    --sidebar-primary-foreground: 0 0% 100%;
+
+    /* Активная вкладка: Бирюзовый фон + Белый текст */
+    --sidebar-accent: 192 72% 47%;
+    --sidebar-accent-foreground: 0 0% 100%;
+
+    /* Разделители чуть светлее фона */
+    --sidebar-border: 215 35% 20%;
+    --sidebar-ring: 47 91% 36%;
+    --sidebar-muted: 215 20% 65%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+    font-family: 'Inter', sans-serif;
+  }
+}
+
+@layer utilities {
+  .stat-card {
+    @apply bg-card rounded-lg border p-5 transition-shadow hover:shadow-md;
+  }
+
+  .table-header {
+    @apply text-xs font-semibold uppercase tracking-wider text-muted-foreground;
+  }
+
+  .status-badge {
+    @apply inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium;
+  }
+}
