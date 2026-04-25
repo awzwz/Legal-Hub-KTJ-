@@ -29,9 +29,9 @@ const AnalyticsPage = () => {
     return {
       branch: b,
       total: cases.length,
-      won: cases.filter(c => c.status === "won").length,
-      lost: cases.filter(c => c.status === "lost").length,
-      active: cases.filter(c => ["active", "appeal", "cassation", "execution"].includes(c.status)).length,
+      won: cases.filter(c => c.outcome === "fully_satisfied").length,
+      lost: cases.filter(c => c.outcome === "denied").length,
+      active: cases.filter(c => ["active", "mediation", "suspended", "execution"].includes(c.status)).length,
     };
   });
 

@@ -1,22 +1,38 @@
 import { useState, useMemo } from "react";
-import { Search, Filter, X, ChevronDown, Eye } from "lucide-react";
-import { mockCases, caseStatusLabels, courtInstanceLabels, caseTypeLabels, partyRoleLabels, branches, lawyers, canViewAllBranches, type CaseStatus, type CourtInstance, type CaseType, type PartyRole } from "@/data/mockData";
+import { Search, Filter, X, Eye } from "lucide-react";
+import { mockCases, caseStatusLabels, caseOutcomeLabels, courtInstanceLabels, caseTypeLabels, partyRoleLabels, branches, lawyers, canViewAllBranches, type CaseStatus, type CaseOutcome, type CourtInstance, type CaseType, type PartyRole } from "@/data/mockData";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { cn } from "@/lib/utils";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
 
 export interface CaseFilters {
   search: string;
   status: CaseStatus | "all";
+  outcome: CaseOutcome | "all";
   courtInstance: CourtInstance | "all";
   caseType: CaseType | "all";
   partyRole: PartyRole | "all";
   branch: string;
   lawyer: string;
   overdueOnly: boolean;
+  claimAmountFrom: number | "";
+  claimAmountTo: number | "";
 }
 
 const defaultFilters: CaseFilters = {
-  search: "", status: "all", courtInstance: "all", caseType: "all", partyRole: "all", branch: "all", lawyer: "all", overdueOnly: false,
+  search: "", 
+  status: "all", 
+  outcome: "all",
+  courtInstance: "all", 
+  caseType: "all", 
+  partyRole: "all", 
+  branch: "all", 
+  lawyer: "all", 
+  overdueOnly: false,
+  claimAmountFrom: "",
+  claimAmountTo: ""
 };
 
 interface CasesFilterBarProps {
@@ -24,28 +40,6 @@ interface CasesFilterBarProps {
   onFiltersChange: (filters: CaseFilters) => void;
   resultCount: number;
 }
-
-const FilterSelect = ({ label, value, onChange, options, disabled = false }: {
-  label: string; value: string; onChange: (v: string) => void; options: { value: string; label: string }[]; disabled?: boolean;
-}) => (
-  <div className={cn("flex flex-col gap-1", disabled && "opacity-60")}>
-    <label className="text-[11px] font-medium text-[hsl(215,35%,45%)] uppercase tracking-wider">{label}</label>
-    <div className="relative">
-      <select
-        value={value}
-        onChange={e => onChange(e.target.value)}
-        disabled={disabled}
-        className={cn(
-          "appearance-none w-full bg-[hsl(220,14%,96%)] border border-[hsl(215,35%,85%)] rounded-lg px-3 py-2 pr-8 text-sm outline-none focus:ring-2 focus:ring-[hsl(192,72%,47%)] focus:border-[hsl(192,72%,47%)] cursor-pointer text-[hsl(215,35%,15%)]",
-          disabled && "cursor-not-allowed bg-[hsl(220,14%,94%)] border-[hsl(215,20%,75%)]"
-        )}
-      >
-        {options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-      </select>
-      <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[hsl(215,20%,55%)] pointer-events-none" />
-    </div>
-  </div>
-);
 
 const CasesFilterBar = ({ filters, onFiltersChange, resultCount }: CasesFilterBarProps) => {
   const [expanded, setExpanded] = useState(false);
@@ -58,6 +52,8 @@ const CasesFilterBar = ({ filters, onFiltersChange, resultCount }: CasesFilterBa
   const activeFilterCount = Object.entries(filters).filter(([k, v]) => {
     if (k === "search") return v !== "";
     if (k === "overdueOnly") return v === true;
+    if (k === "claimAmountFrom") return v !== "";
+    if (k === "claimAmountTo") return v !== "";
     return v !== "all";
   }).length;
 
@@ -71,24 +67,27 @@ const CasesFilterBar = ({ filters, onFiltersChange, resultCount }: CasesFilterBa
   }, [canViewAll, user.branch, filters.branch]);
 
   return (
-    <div className="bg-white rounded-xl border border-[hsl(215,35%,90%)] shadow-sm p-4 space-y-3">
+    <div className="bg-white rounded-xl border border-[hsl(215,35%,90%)] shadow-sm p-4 space-y-4">
       <div className="flex items-center gap-3">
         <div className="relative flex-1 max-w-sm">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[hsl(215,20%,55%)]" />
-          <input
+          <Input
             type="text"
             placeholder="Поиск по номеру, БИН, компании..."
             value={filters.search}
             onChange={e => update({ search: e.target.value })}
-            className="w-full pl-9 pr-4 py-2 text-sm rounded-lg bg-[hsl(220,14%,96%)] border border-[hsl(215,35%,85%)] outline-none focus:ring-2 focus:ring-[hsl(192,72%,47%)] focus:border-[hsl(192,72%,47%)] placeholder:text-[hsl(215,20%,55%)]"
+            className="w-full pl-9"
           />
         </div>
 
-        <button
+        <Button
+          variant={expanded || activeFilterCount > 0 ? "default" : "outline"}
           onClick={() => setExpanded(!expanded)}
           className={cn(
-            "flex items-center gap-2 px-3 py-2 text-sm rounded-lg transition-colors font-medium",
-            expanded || activeFilterCount > 0 ? "bg-[hsl(192,72%,47%)] text-white" : "bg-[hsl(220,14%,96%)] text-[hsl(215,35%,35%)] hover:bg-[hsl(220,14%,94%)] border border-[hsl(215,35%,85%)]"
+            "flex items-center gap-2 px-3 transition-colors font-medium",
+            expanded || activeFilterCount > 0 
+              ? "bg-[hsl(192,72%,47%)] text-white hover:bg-[hsl(192,72%,42%)]" 
+              : "text-[hsl(215,35%,35%)]"
           )}
         >
           <Filter className="w-4 h-4" />
@@ -98,53 +97,150 @@ const CasesFilterBar = ({ filters, onFiltersChange, resultCount }: CasesFilterBa
               {activeFilterCount}
             </span>
           )}
-        </button>
+        </Button>
 
         {activeFilterCount > 0 && (
-          <button
+          <Button
+            variant="ghost"
             onClick={() => onFiltersChange(defaultFilters)}
-            className="p-2 text-[hsl(215,20%,55%)] hover:text-[hsl(215,35%,35%)] transition-colors"
+            className="text-[hsl(215,20%,55%)] hover:text-[hsl(215,35%,35%)] transition-colors gap-2"
             title="Сбросить фильтры"
           >
             <X className="w-4 h-4" />
-          </button>
+            <span className="hidden sm:inline">Сбросить</span>
+          </Button>
         )}
 
         <span className="text-xs text-[hsl(215,20%,45%)] ml-auto">{resultCount} дел</span>
       </div>
 
       {expanded && (
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 pt-2 border-t border-[hsl(215,35%,90%)]">
-          <FilterSelect label="Статус" value={filters.status} onChange={v => update({ status: v as CaseStatus | "all" })}
-            options={[{ value: "all", label: "Все" }, ...Object.entries(caseStatusLabels).map(([v, l]) => ({ value: v, label: l }))]} />
-          <FilterSelect label="Инстанция" value={filters.courtInstance} onChange={v => update({ courtInstance: v as CourtInstance | "all" })}
-            options={[{ value: "all", label: "Все" }, ...Object.entries(courtInstanceLabels).map(([v, l]) => ({ value: v, label: l }))]} />
-          <FilterSelect label="Тип дела" value={filters.caseType} onChange={v => update({ caseType: v as CaseType | "all" })}
-            options={[{ value: "all", label: "Все" }, ...Object.entries(caseTypeLabels).map(([v, l]) => ({ value: v, label: l }))]} />
-          <FilterSelect label="Роль" value={filters.partyRole} onChange={v => update({ partyRole: v as PartyRole | "all" })}
-            options={[{ value: "all", label: "Все" }, ...Object.entries(partyRoleLabels).map(([v, l]) => ({ value: v, label: l }))]} />
-          <div className={cn("flex flex-col gap-1", !canViewAll && "opacity-75")}>
-            <label className="text-[11px] font-medium text-[hsl(215,35%,45%)] uppercase tracking-wider">Филиал</label>
-            <div className="relative">
-              <select
-                value={filters.branch}
-                onChange={e => update({ branch: e.target.value })}
-                disabled={!canViewAll}
-                className={cn(
-                  "appearance-none w-full bg-[hsl(220,14%,96%)] border border-[hsl(215,35%,85%)] rounded-lg px-3 py-2 pr-8 text-sm outline-none focus:ring-2 focus:ring-[hsl(192,72%,47%)] focus:border-[hsl(192,72%,47%)] cursor-pointer text-[hsl(215,35%,15%)]",
-                  !canViewAll && "cursor-not-allowed bg-[hsl(220,14%,94%)] border-[hsl(215,20%,75%)]"
-                )}
-              >
-                {canViewAll && <option value="all">Все</option>}
-                {availableBranches.map(b => <option key={b} value={b}>{b}</option>)}
-              </select>
-              <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[hsl(215,20%,55%)] pointer-events-none" />
-              {!canViewAll && <Eye className="absolute right-8 top-1/2 -translate-y-1/2 w-3 h-3 text-[hsl(38,92%,50%)]" />}
-            </div>
-            {!canViewAll && <p className="text-[10px] text-[hsl(38,92%,45%)]">Только ваш филиал</p>}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 pt-4 border-t border-[hsl(215,35%,90%)] items-end">
+          <div className="flex flex-col gap-1.5">
+            <label className="text-[11px] font-medium text-[hsl(215,35%,45%)] uppercase tracking-wider">Стадия дела</label>
+            <Select value={filters.status} onValueChange={(v) => update({ status: v as CaseStatus | "all" })}>
+              <SelectTrigger>
+                <SelectValue placeholder="Выберите стадию" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Все</SelectItem>
+                {Object.entries(caseStatusLabels).map(([v, l]) => (
+                  <SelectItem key={v} value={v}>{l}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
-          <FilterSelect label="Юрист" value={filters.lawyer} onChange={v => update({ lawyer: v })}
-            options={[{ value: "all", label: "Все" }, ...lawyers.map(l => ({ value: l, label: l }))]} />
+
+          <div className="flex flex-col gap-1.5">
+            <label className="text-[11px] font-medium text-[hsl(215,35%,45%)] uppercase tracking-wider">Результат</label>
+            <Select value={filters.outcome} onValueChange={(v) => update({ outcome: v as CaseOutcome | "all" })}>
+              <SelectTrigger>
+                <SelectValue placeholder="Выберите результат" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Все</SelectItem>
+                {Object.entries(caseOutcomeLabels).map(([v, l]) => (
+                  <SelectItem key={v} value={v}>{l}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <label className="text-[11px] font-medium text-[hsl(215,35%,45%)] uppercase tracking-wider">Инстанция</label>
+            <Select value={filters.courtInstance} onValueChange={(v) => update({ courtInstance: v as CourtInstance | "all" })}>
+              <SelectTrigger>
+                <SelectValue placeholder="Выберите инстанцию" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Все</SelectItem>
+                {Object.entries(courtInstanceLabels).map(([v, l]) => (
+                  <SelectItem key={v} value={v}>{l}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <label className="text-[11px] font-medium text-[hsl(215,35%,45%)] uppercase tracking-wider">Тип дела</label>
+            <Select value={filters.caseType} onValueChange={(v) => update({ caseType: v as CaseType | "all" })}>
+              <SelectTrigger>
+                <SelectValue placeholder="Выберите тип" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Все</SelectItem>
+                {Object.entries(caseTypeLabels).map(([v, l]) => (
+                  <SelectItem key={v} value={v}>{l}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <label className="text-[11px] font-medium text-[hsl(215,35%,45%)] uppercase tracking-wider">Роль</label>
+            <Select value={filters.partyRole} onValueChange={(v) => update({ partyRole: v as PartyRole | "all" })}>
+              <SelectTrigger>
+                <SelectValue placeholder="Выберите роль" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Все</SelectItem>
+                {Object.entries(partyRoleLabels).map(([v, l]) => (
+                  <SelectItem key={v} value={v}>{l}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className={cn("flex flex-col gap-1.5", !canViewAll && "opacity-75")}>
+            <label className="text-[11px] font-medium text-[hsl(215,35%,45%)] uppercase tracking-wider">Филиал</label>
+            <Select disabled={!canViewAll} value={filters.branch} onValueChange={(v) => update({ branch: v })}>
+              <SelectTrigger className={cn(!canViewAll && "cursor-not-allowed bg-[hsl(220,14%,94%)] opacity-100")}>
+                {canViewAll ? <SelectValue placeholder="Выберите филиал" /> : <span className="flex items-center gap-2"><Eye className="w-3.5 h-3.5 text-[hsl(38,92%,50%)]" />Только ваш филиал</span>}
+              </SelectTrigger>
+              <SelectContent>
+                {canViewAll && <SelectItem value="all">Все</SelectItem>}
+                {availableBranches.map(b => (
+                  <SelectItem key={b} value={b}>{b}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <label className="text-[11px] font-medium text-[hsl(215,35%,45%)] uppercase tracking-wider">Юрист</label>
+            <Select value={filters.lawyer} onValueChange={(v) => update({ lawyer: v })}>
+              <SelectTrigger>
+                <SelectValue placeholder="Выберите юриста" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Все</SelectItem>
+                {lawyers.map(l => (
+                  <SelectItem key={l} value={l}>{l}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <label className="text-[11px] font-medium text-[hsl(215,35%,45%)] uppercase tracking-wider whitespace-nowrap">Сумма иска</label>
+            <div className="flex items-center gap-2">
+              <Input
+                type="number"
+                placeholder="От (₸)"
+                value={filters.claimAmountFrom}
+                onChange={(e) => update({ claimAmountFrom: e.target.value === "" ? "" : Number(e.target.value) })}
+                className="h-9 text-sm px-2 w-full min-w-[80px]"
+              />
+              <span className="text-[hsl(215,20%,55%)]">-</span>
+              <Input
+                type="number"
+                placeholder="До (₸)"
+                value={filters.claimAmountTo}
+                onChange={(e) => update({ claimAmountTo: e.target.value === "" ? "" : Number(e.target.value) })}
+                className="h-9 text-sm px-2 w-full min-w-[80px]"
+              />
+            </div>
+          </div>
         </div>
       )}
     </div>
@@ -163,12 +259,15 @@ export const useFilteredCases = (filters: CaseFilters, cases?: typeof mockCases)
         if (!match) return false;
       }
       if (filters.status !== "all" && c.status !== filters.status) return false;
+      if (filters.outcome !== "all" && c.outcome !== filters.outcome) return false;
       if (filters.courtInstance !== "all" && c.courtInstance !== filters.courtInstance) return false;
       if (filters.caseType !== "all" && c.caseType !== filters.caseType) return false;
       if (filters.partyRole !== "all" && c.partyRole !== filters.partyRole) return false;
       if (filters.branch !== "all" && c.branch !== filters.branch) return false;
       if (filters.lawyer !== "all" && c.assignedLawyer !== filters.lawyer) return false;
       if (filters.overdueOnly && c.daysOverdue === 0) return false;
+      if (filters.claimAmountFrom !== "" && c.claimAmount < Number(filters.claimAmountFrom)) return false;
+      if (filters.claimAmountTo !== "" && c.claimAmount > Number(filters.claimAmountTo)) return false;
       return true;
     });
   }, [filters, sourceCases]);

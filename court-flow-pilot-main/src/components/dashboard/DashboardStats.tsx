@@ -50,9 +50,9 @@ const DashboardStats = ({ cases }: { cases?: LegalCase[] }) => {
   const userCases = cases ?? getFilteredCasesForUser(user);
 
   const totalCases = userCases.length;
-  const activeCases = userCases.filter(c => ["active", "appeal", "cassation", "execution"].includes(c.status)).length;
-  const wonCases = userCases.filter(c => c.status === "won").length;
-  const lostCases = userCases.filter(c => c.status === "lost").length;
+  const activeCases = userCases.filter(c => ["active", "mediation", "suspended", "execution"].includes(c.status)).length;
+  const wonCases = userCases.filter(c => c.outcome === "fully_satisfied").length;
+  const lostCases = userCases.filter(c => c.outcome === "denied").length;
   const overdueCasesList = userCases.filter(c => c.daysOverdue > 0);
   const overdueCases = overdueCasesList.length;
   const overdueByLawyer = Object.entries(

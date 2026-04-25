@@ -1,16 +1,18 @@
 import { useState } from "react";
-import { mockCases, formatAmount, caseStatusLabels, courtInstanceLabels, partyRoleLabels, caseTypeLabels, commentTypeLabels, canEditCase, canAddPayment, canViewAllCases } from "@/data/mockData";
+import { mockCases, formatAmount, caseStatusLabels, courtInstanceLabels, partyRoleLabels, caseTypeLabels, commentTypeLabels, canEditCase, canAddPayment, canViewAllCases, notifyCasesChanged } from "@/data/mockData";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
-import { ArrowLeft, Calendar, MapPin, User, Building2, Scale, FileText, Clock, MessageSquare, History, CreditCard, ThumbsUp, Send, ShieldAlert, Eye, Lock } from "lucide-react";
+import { ArrowLeft, Calendar, MapPin, User, Building2, Scale, FileText, Clock, MessageSquare, History, CreditCard, ThumbsUp, Send, ShieldAlert, Eye, Lock, Paperclip } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { motion, AnimatePresence } from "framer-motion";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
 
 interface CaseDetailProps {
   caseId: string;
   onBack: () => void;
 }
 
-type Tab = "info" | "payments" | "comments" | "timeline";
+type Tab = "info" | "documents" | "payments" | "comments" | "timeline";
 
 const commentTypeStyles: Record<string, string> = {
   question: "bg-blue-100 text-blue-700",
@@ -22,6 +24,7 @@ const commentTypeStyles: Record<string, string> = {
 const CaseDetail = ({ caseId, onBack }: CaseDetailProps) => {
   const [activeTab, setActiveTab] = useState<Tab>("info");
   const [newComment, setNewComment] = useState("");
+  const [newDocumentTitle, setNewDocumentTitle] = useState("");
   const caseData = mockCases.find(c => c.id === caseId);
   const { user } = useCurrentUser();
 
@@ -31,20 +34,21 @@ const CaseDetail = ({ caseId, onBack }: CaseDetailProps) => {
   const canViewAll = canViewAllCases(user);
   const isRestricted = !canViewAll && caseData.branch !== user.branch;
 
-  const totalDebt = caseData.mainDebt + caseData.stateFee + caseData.penalty + caseData.lawyerFee + caseData.executionFee;
+  const totalDebt = caseData.mainDebt + caseData.stateFee + caseData.fines + caseData.repExpenses + caseData.otherCosts;
   const remaining = totalDebt - caseData.paidAmount;
   const paymentProgress = totalDebt > 0 ? (caseData.paidAmount / totalDebt) * 100 : 0;
 
   const debtBreakdown = [
-    { label: "Основной долг", value: caseData.mainDebt, pct: (caseData.mainDebt / totalDebt * 100) },
-    { label: "Госпошлина", value: caseData.stateFee, pct: (caseData.stateFee / totalDebt * 100) },
-    { label: "Пеня", value: caseData.penalty, pct: (caseData.penalty / totalDebt * 100) },
-    { label: "Услуги адвоката", value: caseData.lawyerFee, pct: (caseData.lawyerFee / totalDebt * 100) },
-    { label: "Исполнительский сбор", value: caseData.executionFee, pct: (caseData.executionFee / totalDebt * 100) },
+    { label: "Основной долг", value: caseData.mainDebt, pct: (caseData.mainDebt / totalDebt * 100) || 0 },
+    { label: "Госпошлина", value: caseData.stateFee, pct: (caseData.stateFee / totalDebt * 100) || 0 },
+    { label: "Штрафные санкции", value: caseData.fines, pct: (caseData.fines / totalDebt * 100) || 0 },
+    { label: "Представительские расходы", value: caseData.repExpenses, pct: (caseData.repExpenses / totalDebt * 100) || 0 },
+    { label: "Прочие издержки", value: caseData.otherCosts, pct: (caseData.otherCosts / totalDebt * 100) || 0 },
   ];
 
   const tabs: { id: Tab; label: string; icon: React.ElementType; count?: number }[] = [
     { id: "info", label: "Информация", icon: FileText },
+    { id: "documents", label: "Документы", icon: Paperclip, count: caseData.documents?.length || 0 },
     { id: "payments", label: "Оплаты", icon: CreditCard, count: caseData.payments.length },
     { id: "comments", label: "Комментарии", icon: MessageSquare, count: caseData.comments.length },
     { id: "timeline", label: "История", icon: History, count: caseData.events.length },
@@ -86,8 +90,8 @@ const CaseDetail = ({ caseId, onBack }: CaseDetailProps) => {
           <p className="text-sm text-blue-600 mt-1">{caseData.court} · Судья: {caseData.judge}</p>
         </div>
         <span className={cn("inline-flex items-center rounded-full px-3 py-1 text-sm font-medium border",
-          caseData.status === "won" ? "bg-green-100 text-green-700 border-green-200" :
-          caseData.status === "lost" ? "bg-red-100 text-red-700 border-red-200" :
+          caseData.outcome === "fully_satisfied" ? "bg-green-100 text-green-700 border-green-200" :
+          caseData.outcome === "denied" ? "bg-red-100 text-red-700 border-red-200" :
           "bg-blue-100 text-blue-700 border-blue-200"
         )}>
           {caseStatusLabels[caseData.status]}
@@ -95,13 +99,13 @@ const CaseDetail = ({ caseId, onBack }: CaseDetailProps) => {
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-1 border-b mb-6">
+      <div className="flex gap-1 border-b mb-6 overflow-x-auto custom-scrollbar">
         {tabs.map(tab => (
           <button
             key={tab.id}
             onClick={() => setActiveTab(tab.id)}
             className={cn(
-              "flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors",
+              "flex items-center whitespace-nowrap gap-1.5 px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors",
               activeTab === tab.id ? "border-blue-600 text-blue-900" : "border-transparent text-blue-500 hover:text-blue-700"
             )}
           >
@@ -121,7 +125,7 @@ const CaseDetail = ({ caseId, onBack }: CaseDetailProps) => {
             <div className="bg-white rounded-xl border border-blue-100 p-5 shadow-sm lg:col-span-2 space-y-4">
               <h3 className="font-semibold text-sm text-blue-900 flex items-center gap-2"><FileText className="w-4 h-4 text-blue-600" /> Детали дела</h3>
               <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
-                <div><p className="text-blue-500 text-xs">Тип дела</p><p className="font-medium text-blue-900">{caseTypeLabels[caseData.caseType]}</p></div>
+                <div><p className="text-blue-500 text-xs">Тип дела</p><p className="font-medium text-blue-900">{caseTypeLabels[caseData.caseType] || caseData.caseType}</p></div>
                 <div><p className="text-blue-500 text-xs">Инстанция</p><p className="font-medium text-blue-900">{courtInstanceLabels[caseData.courtInstance]}</p></div>
                 <div><p className="text-blue-500 text-xs">Роль в суде</p><p className="font-medium text-blue-900">{partyRoleLabels[caseData.partyRole]}</p></div>
                 <div><p className="text-blue-500 text-xs">Сумма иска</p><p className="font-medium text-blue-900">{formatAmount(caseData.claimAmount)}</p></div>
@@ -154,8 +158,8 @@ const CaseDetail = ({ caseId, onBack }: CaseDetailProps) => {
                   <Calendar className="w-4 h-4 text-blue-400 mt-0.5" />
                   <div>
                     <p className="text-blue-500 text-xs">Ближайшее заседание</p>
-                    <p className={cn("font-medium", caseData.nextHearing ? "text-blue-700" : "text-blue-400")}>
-                      {caseData.nextHearing || "Не назначено"}
+                    <p className={cn("font-medium", caseData.nextHearing && caseData.nextHearing !== "not_set" ? "text-blue-700" : "text-blue-400")}>
+                      {caseData.nextHearing === "not_set" ? "Не назначено" : (caseData.nextHearing || "Не назначено")}
                     </p>
                   </div>
                 </div>
@@ -166,7 +170,7 @@ const CaseDetail = ({ caseId, onBack }: CaseDetailProps) => {
                 <div className="flex items-center gap-2 text-sm">
                   <span className="text-blue-500 text-xs">Контрагент:</span>
                   <span className="font-medium text-blue-900">{caseData.company}</span>
-                  <span className="text-xs text-blue-600 bg-blue-50 px-2 py-0.5 rounded border border-blue-100">БИН: {caseData.companyBIN}</span>
+                  <span className="text-xs text-blue-600 bg-blue-50 px-2 py-0.5 rounded border border-blue-100">БИН/ИИН: {caseData.companyBIN}</span>
                 </div>
               </div>
             </div>
@@ -229,6 +233,83 @@ const CaseDetail = ({ caseId, onBack }: CaseDetailProps) => {
                 </div>
               )}
             </div>
+          </motion.div>
+        )}
+
+        {activeTab === "documents" && (
+          <motion.div key="documents" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="space-y-4">
+            
+            {/* Document upload form */}
+            {canEdit && (
+              <div className="bg-white rounded-xl border border-blue-100 p-5 shadow-sm space-y-4">
+                <h3 className="font-semibold text-sm text-blue-900 flex items-center gap-2">
+                  <Paperclip className="w-4 h-4 text-blue-600" /> Прикрепить документ
+                </h3>
+                <div className="flex flex-col sm:flex-row gap-3">
+                  <Input 
+                    value={newDocumentTitle} 
+                    onChange={e => setNewDocumentTitle(e.target.value)} 
+                    placeholder="Название документа (например: Исковое заявление)" 
+                    className="flex-1"
+                  />
+                  <div className="flex gap-2">
+                    <Button 
+                      variant="outline" 
+                      className="gap-2 text-blue-600 border-blue-200 hover:bg-blue-50 whitespace-nowrap"
+                    >
+                      <Paperclip className="w-4 h-4" />
+                      Выбрать файл
+                    </Button>
+                    <Button 
+                      onClick={() => {
+                        if (!newDocumentTitle.trim()) return;
+                        const newDoc = {
+                          id: `doc-${Date.now()}`,
+                          title: newDocumentTitle,
+                          uploadDate: new Date().toISOString().slice(0, 10),
+                          author: user.name
+                        };
+                        caseData.documents.push(newDoc);
+                        notifyCasesChanged();
+                        setNewDocumentTitle("");
+                      }}
+                      className="bg-[hsl(192,72%,47%)] hover:bg-[hsl(192,72%,42%)] whitespace-nowrap"
+                      disabled={!newDocumentTitle.trim()}
+                    >
+                      Сохранить
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Document list */}
+            {!caseData.documents || caseData.documents.length === 0 ? (
+              <div className="bg-white rounded-xl border border-blue-100 p-5 shadow-sm flex flex-col items-center justify-center py-12 text-blue-400">
+                <FileText className="w-8 h-8 mb-2 opacity-50" />
+                <p className="text-sm">Нет прикрепленных документов</p>
+              </div>
+            ) : (
+              <div className="bg-white rounded-xl border border-blue-100 overflow-hidden shadow-sm">
+                <div className="grid grid-cols-12 gap-4 p-4 border-b border-blue-100 bg-blue-50/50 text-xs font-semibold text-blue-700 uppercase tracking-wider hidden sm:grid">
+                  <div className="col-span-12 sm:col-span-6">Название</div>
+                  <div className="col-span-12 sm:col-span-3">Дата загрузки</div>
+                  <div className="col-span-12 sm:col-span-3">Автор</div>
+                </div>
+                <div className="divide-y divide-blue-50">
+                  {caseData.documents.map(doc => (
+                    <div key={doc.id} className="grid grid-cols-1 sm:grid-cols-12 gap-2 sm:gap-4 p-4 text-sm items-start sm:items-center hover:bg-blue-50/30 transition-colors">
+                      <div className="col-span-1 sm:col-span-6 font-medium text-blue-900 flex items-center gap-2">
+                        <FileText className="w-4 h-4 text-blue-400 shrink-0" />
+                        {doc.title}
+                      </div>
+                      <div className="col-span-1 sm:col-span-3 text-blue-600 text-xs sm:text-sm">{doc.uploadDate}</div>
+                      <div className="col-span-1 sm:col-span-3 text-blue-600 text-xs sm:text-sm">{doc.author}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </motion.div>
         )}
 

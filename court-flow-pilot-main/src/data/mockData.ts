@@ -1,6 +1,7 @@
-export type CaseStatus = "active" | "won" | "lost" | "appeal" | "cassation" | "execution" | "closed";
+export type CaseStatus = "active" | "mediation" | "suspended" | "execution" | "closed";
+export type CaseOutcome = "fully_satisfied" | "partially_satisfied" | "denied" | "settled" | "dismissed" | "pending";
 export type CourtInstance = "first" | "appeal" | "cassation" | "supreme";
-export type CaseType = "civil" | "administrative" | "criminal" | "executive";
+export type CaseType = "civil" | "administrative" | "criminal" | "executive" | "labor" | "tax" | "corporate" | "other";
 export type PartyRole = "plaintiff" | "defendant" | "third_party";
 
 export interface Payment {
@@ -11,6 +12,14 @@ export interface Payment {
   date: string;
   amount: number;
   description: string;
+}
+
+
+export interface CaseDocument {
+  id: string;
+  title: string;
+  uploadDate: string;
+  author: string;
 }
 
 export interface CaseComment {
@@ -38,7 +47,9 @@ export interface LegalCase {
   courtInstance: CourtInstance;
   caseType: CaseType;
   status: CaseStatus;
+  outcome: CaseOutcome;
   partyRole: PartyRole;
+  opponentType: "juridical" | "physical";
   plaintiff: string;
   defendant: string;
   company: string;
@@ -46,21 +57,22 @@ export interface LegalCase {
   claimAmount: number;
   mainDebt: number;
   stateFee: number;
-  penalty: number;
-  lawyerFee: number;
-  executionFee: number;
+  fines: number;
+  repExpenses: number;
+  otherCosts: number;
   paidAmount: number;
   assignedLawyer: string;
   branch: string;
   city: string;
   judge: string;
   filingDate: string;
-  nextHearing: string | null;
+  nextHearing: string | null | "not_set";
   paymentDeadline: string | null;
   daysOverdue: number;
   lastUpdated: string;
   riskLevel: "low" | "medium" | "high";
   payments: Payment[];
+  documents: CaseDocument[];
   comments: CaseComment[];
   events: CaseEvent[];
 }
@@ -74,12 +86,19 @@ export const courtInstanceLabels: Record<CourtInstance, string> = {
 
 export const caseStatusLabels: Record<CaseStatus, string> = {
   active: "В работе",
-  won: "Выиграно",
-  lost: "Проиграно",
-  appeal: "Апелляция",
-  cassation: "Кассация",
+  mediation: "Медиация",
+  suspended: "Приостановлено",
   execution: "Исполнение",
   closed: "Закрыто",
+};
+
+export const caseOutcomeLabels: Record<CaseOutcome, string> = {
+  fully_satisfied: "Иск удовлетворен",
+  partially_satisfied: "Частично удовлетворен",
+  denied: "В иске отказано",
+  settled: "Мировое соглашение",
+  dismissed: "Оставлено без рассмотрения",
+  pending: "Нет решения",
 };
 
 export const caseTypeLabels: Record<CaseType, string> = {
@@ -87,6 +106,10 @@ export const caseTypeLabels: Record<CaseType, string> = {
   administrative: "Административное",
   criminal: "Уголовное",
   executive: "Исполнительное",
+  labor: "Трудовое",
+  tax: "Налоговое",
+  corporate: "Корпоративное",
+  other: "Иное",
 };
 
 export const partyRoleLabels: Record<PartyRole, string> = {
@@ -102,17 +125,18 @@ export const commentTypeLabels: Record<string, string> = {
   info: "Информация",
 };
 
-export const branches = ["Северный", "Южный", "Западный", "Экспресс", "Центральный"];
+export const branches = ["Центральный аппарат", "Северный", "Южный", "Западный", "Экспресс", "Центральный"];
 
 export const lawyers = ["Касымов А.Б.", "Нурланова Г.С.", "Ахметов Д.К.", "Бекмуратов Е.Н.", "Сагитов Р.М."];
 
 export const mockCases: LegalCase[] = [
   {
-    id: "1", caseNumber: "2-1234/2025", court: "СМЭС г. Астана", courtInstance: "first", caseType: "civil", status: "active", partyRole: "plaintiff",
+    id: "1", caseNumber: "2-1234/2025", court: "СМЭС г. Астана", courtInstance: "first", caseType: "civil", status: "active", outcome: "pending", partyRole: "plaintiff",
     plaintiff: "АО «НК «КТЖ»", defendant: "ТОО «ТрансЛогистик»", company: "ТОО «ТрансЛогистик»", companyBIN: "180240012345",
-    claimAmount: 45600000, mainDebt: 38000000, stateFee: 1368000, penalty: 4500000, lawyerFee: 1200000, executionFee: 532000, paidAmount: 0,
+    claimAmount: 45600000, mainDebt: 38000000, stateFee: 1368000, fines: 4500000, repExpenses: 1200000, otherCosts: 532000, paidAmount: 0,
     assignedLawyer: "Касымов А.Б.", branch: "Северный", city: "Астана", judge: "Абдрахманов К.Т.",
     filingDate: "2025-01-15", nextHearing: "2025-04-10", paymentDeadline: null, daysOverdue: 0, lastUpdated: "2025-03-28", riskLevel: "medium",
+    documents: [],
     payments: [],
     comments: [
       { id: "c1", author: "Касымов А.Б.", role: "Юрист", text: "Запросил дополнительные документы у ответчика. Ждём ответ до 05.04.", type: "info", date: "2025-03-28", likes: 2 },
@@ -125,11 +149,12 @@ export const mockCases: LegalCase[] = [
     ],
   },
   {
-    id: "2", caseNumber: "2-5678/2025", court: "Районный суд Алматы", courtInstance: "appeal", caseType: "civil", status: "appeal", partyRole: "defendant",
+    id: "2", caseNumber: "2-5678/2025", court: "Районный суд Алматы", courtInstance: "appeal", caseType: "civil", status: "active", outcome: "pending", partyRole: "defendant",
     plaintiff: "ТОО «СтройМонтаж»", defendant: "АО «НК «КТЖ»", company: "ТОО «СтройМонтаж»", companyBIN: "150340067890",
-    claimAmount: 12800000, mainDebt: 10000000, stateFee: 384000, penalty: 1800000, lawyerFee: 500000, executionFee: 116000, paidAmount: 0,
+    claimAmount: 12800000, mainDebt: 10000000, stateFee: 384000, fines: 1800000, repExpenses: 500000, otherCosts: 116000, paidAmount: 0,
     assignedLawyer: "Нурланова Г.С.", branch: "Южный", city: "Алматы", judge: "Сериков М.А.",
     filingDate: "2024-11-20", nextHearing: "2025-04-05", paymentDeadline: "2025-03-01", daysOverdue: 29, lastUpdated: "2025-03-25", riskLevel: "high",
+    documents: [],
     payments: [],
     comments: [
       { id: "c3", author: "Нурланова Г.С.", role: "Юрист", text: "Проиграна первая инстанция. Подана апелляция. Высокий риск — слабая доказательная база.", type: "problem", date: "2025-03-25", likes: 1 },
@@ -141,11 +166,12 @@ export const mockCases: LegalCase[] = [
     ],
   },
   {
-    id: "3", caseNumber: "2-9012/2024", court: "СМЭС Караганды", courtInstance: "first", caseType: "civil", status: "won", partyRole: "plaintiff",
+    id: "3", caseNumber: "2-9012/2024", court: "СМЭС Караганды", courtInstance: "first", caseType: "civil", status: "closed", outcome: "fully_satisfied", partyRole: "plaintiff",
     plaintiff: "АО «НК «КТЖ»", defendant: "ТОО «КазГрузПеревозки»", company: "ТОО «КазГрузПеревозки»", companyBIN: "120140034567",
-    claimAmount: 78900000, mainDebt: 65000000, stateFee: 2367000, penalty: 8900000, lawyerFee: 2000000, executionFee: 633000, paidAmount: 65000000,
+    claimAmount: 78900000, mainDebt: 65000000, stateFee: 2367000, fines: 8900000, repExpenses: 2000000, otherCosts: 633000, paidAmount: 65000000,
     assignedLawyer: "Ахметов Д.К.", branch: "Центральный", city: "Караганда", judge: "Исмагулова Н.Р.",
     filingDate: "2024-06-10", nextHearing: null, paymentDeadline: "2025-02-15", daysOverdue: 0, lastUpdated: "2025-03-20", riskLevel: "low",
+    documents: [],
     payments: [
       { id: "p1", documentNumber: "ПП-2025-001234", payer: "ТОО «КазГрузПеревозки»", payee: "АО «НК «КТЖ»", date: "2025-02-10", amount: 45000000, description: "Частичное погашение основного долга" },
       { id: "p2", documentNumber: "ПП-2025-001890", payer: "ТОО «КазГрузПеревозки»", payee: "АО «НК «КТЖ»", date: "2025-03-05", amount: 20000000, description: "Окончательное погашение основного долга" },
@@ -161,11 +187,12 @@ export const mockCases: LegalCase[] = [
     ],
   },
   {
-    id: "4", caseNumber: "2-3456/2025", court: "СМЭС Актобе", courtInstance: "cassation", caseType: "civil", status: "cassation", partyRole: "plaintiff",
+    id: "4", caseNumber: "2-3456/2025", court: "СМЭС Актобе", courtInstance: "cassation", caseType: "civil", status: "active", outcome: "pending", partyRole: "plaintiff",
     plaintiff: "АО «НК «КТЖ»", defendant: "ТОО «ЗападТранс»", company: "ТОО «ЗападТранс»", companyBIN: "170540089012",
-    claimAmount: 23400000, mainDebt: 19500000, stateFee: 702000, penalty: 2400000, lawyerFee: 600000, executionFee: 198000, paidAmount: 0,
+    claimAmount: 23400000, mainDebt: 19500000, stateFee: 702000, fines: 2400000, repExpenses: 600000, otherCosts: 198000, paidAmount: 0,
     assignedLawyer: "Бекмуратов Е.Н.", branch: "Западный", city: "Актобе", judge: "Турсунов Б.Ж.",
     filingDate: "2024-09-05", nextHearing: "2025-04-15", paymentDeadline: null, daysOverdue: 0, lastUpdated: "2025-03-27", riskLevel: "medium",
+    documents: [],
     payments: [],
     comments: [],
     events: [
@@ -174,11 +201,12 @@ export const mockCases: LegalCase[] = [
     ],
   },
   {
-    id: "5", caseNumber: "2-7890/2024", court: "Районный суд Шымкента", courtInstance: "first", caseType: "administrative", status: "lost", partyRole: "defendant",
+    id: "5", caseNumber: "2-7890/2024", court: "Районный суд Шымкента", courtInstance: "first", caseType: "administrative", status: "closed", outcome: "denied", partyRole: "defendant",
     plaintiff: "ТОО «ЮгСервис»", defendant: "АО «НК «КТЖ»", company: "ТОО «ЮгСервис»", companyBIN: "140240056789",
-    claimAmount: 8500000, mainDebt: 7000000, stateFee: 255000, penalty: 900000, lawyerFee: 300000, executionFee: 45000, paidAmount: 0,
+    claimAmount: 8500000, mainDebt: 7000000, stateFee: 255000, fines: 900000, repExpenses: 300000, otherCosts: 45000, paidAmount: 0,
     assignedLawyer: "Нурланова Г.С.", branch: "Южный", city: "Шымкент", judge: "Козыбаева А.М.",
     filingDate: "2024-08-12", nextHearing: null, paymentDeadline: "2025-02-28", daysOverdue: 30, lastUpdated: "2025-03-15", riskLevel: "high",
+    documents: [],
     payments: [],
     comments: [
       { id: "c5", author: "Бухгалтер Иванова", role: "Бухгалтер", text: "Необходимо срочно оплатить, иначе возможен арест счетов!", type: "problem", date: "2025-03-15", likes: 3 },
@@ -190,11 +218,12 @@ export const mockCases: LegalCase[] = [
     ],
   },
   {
-    id: "6", caseNumber: "2-2345/2025", court: "СМЭС Павлодар", courtInstance: "first", caseType: "civil", status: "active", partyRole: "plaintiff",
+    id: "6", caseNumber: "2-2345/2025", court: "СМЭС Павлодар", courtInstance: "first", caseType: "civil", status: "active", outcome: "pending", partyRole: "plaintiff",
     plaintiff: "АО «НК «КТЖ»", defendant: "ТОО «ВосточныйПуть»", company: "ТОО «ВосточныйПуть»", companyBIN: "160640012345",
-    claimAmount: 34200000, mainDebt: 28500000, stateFee: 1026000, penalty: 3400000, lawyerFee: 900000, executionFee: 374000, paidAmount: 5000000,
+    claimAmount: 34200000, mainDebt: 28500000, stateFee: 1026000, fines: 3400000, repExpenses: 900000, otherCosts: 374000, paidAmount: 5000000,
     assignedLawyer: "Сагитов Р.М.", branch: "Экспресс", city: "Павлодар", judge: "Кенжебаев Т.С.",
     filingDate: "2025-02-01", nextHearing: "2025-04-08", paymentDeadline: "2025-05-01", daysOverdue: 0, lastUpdated: "2025-03-29", riskLevel: "low",
+    documents: [],
     payments: [
       { id: "p3", documentNumber: "ПП-2025-002100", payer: "ТОО «ВосточныйПуть»", payee: "АО «НК «КТЖ»", date: "2025-03-20", amount: 5000000, description: "Частичная оплата" },
     ],
@@ -205,11 +234,12 @@ export const mockCases: LegalCase[] = [
     ],
   },
   {
-    id: "7", caseNumber: "2-6789/2024", court: "Верховный суд РК", courtInstance: "supreme", caseType: "civil", status: "active", partyRole: "plaintiff",
+    id: "7", caseNumber: "2-6789/2024", court: "Верховный суд РК", courtInstance: "supreme", caseType: "civil", status: "active", outcome: "pending", partyRole: "plaintiff",
     plaintiff: "АО «НК «КТЖ»", defendant: "ТОО «МегаТранс»", company: "ТОО «МегаТранс»", companyBIN: "110140078901",
-    claimAmount: 156000000, mainDebt: 130000000, stateFee: 4680000, penalty: 15600000, lawyerFee: 4500000, executionFee: 1220000, paidAmount: 0,
+    claimAmount: 156000000, mainDebt: 130000000, stateFee: 4680000, fines: 15600000, repExpenses: 4500000, otherCosts: 1220000, paidAmount: 0,
     assignedLawyer: "Касымов А.Б.", branch: "Северный", city: "Астана", judge: "Жумабаев С.К.",
     filingDate: "2024-03-20", nextHearing: "2025-04-20", paymentDeadline: null, daysOverdue: 0, lastUpdated: "2025-03-28", riskLevel: "high",
+    documents: [],
     payments: [],
     comments: [
       { id: "c6", author: "Касымов А.Б.", role: "Юрист", text: "Крупнейшее дело. Верховный суд рассмотрит 20.04. Подготовлены все материалы.", type: "info", date: "2025-03-28", likes: 4 },
@@ -221,11 +251,12 @@ export const mockCases: LegalCase[] = [
     ],
   },
   {
-    id: "8", caseNumber: "2-4567/2025", court: "СМЭС Костанай", courtInstance: "first", caseType: "executive", status: "execution", partyRole: "plaintiff",
+    id: "8", caseNumber: "2-4567/2025", court: "СМЭС Костанай", courtInstance: "first", caseType: "executive", status: "execution", outcome: "pending", partyRole: "plaintiff",
     plaintiff: "АО «НК «КТЖ»", defendant: "ТОО «СеверЛогистик»", company: "ТОО «СеверЛогистик»", companyBIN: "190840034567",
-    claimAmount: 15700000, mainDebt: 13000000, stateFee: 471000, penalty: 1600000, lawyerFee: 450000, executionFee: 179000, paidAmount: 8000000,
+    claimAmount: 15700000, mainDebt: 13000000, stateFee: 471000, fines: 1600000, repExpenses: 450000, otherCosts: 179000, paidAmount: 8000000,
     assignedLawyer: "Ахметов Д.К.", branch: "Северный", city: "Костанай", judge: "Рахимова Д.А.",
     filingDate: "2024-12-01", nextHearing: null, paymentDeadline: "2025-03-15", daysOverdue: 15, lastUpdated: "2025-03-26", riskLevel: "medium",
+    documents: [],
     payments: [
       { id: "p4", documentNumber: "ПП-2025-000890", payer: "ТОО «СеверЛогистик»", payee: "АО «НК «КТЖ»", date: "2025-02-28", amount: 8000000, description: "Частичная оплата по исп. производству" },
     ],
@@ -237,11 +268,12 @@ export const mockCases: LegalCase[] = [
     ],
   },
   {
-    id: "9", caseNumber: "2-1111/2025", court: "СМЭС г. Астана", courtInstance: "first", caseType: "criminal", status: "active", partyRole: "plaintiff",
+    id: "9", caseNumber: "2-1111/2025", court: "СМЭС г. Астана", courtInstance: "first", caseType: "criminal", status: "active", outcome: "pending", partyRole: "plaintiff",
     plaintiff: "АО «НК «КТЖ»", defendant: "Сулейменов К.М.", company: "ИП Сулейменов", companyBIN: "850101300456",
-    claimAmount: 5200000, mainDebt: 4200000, stateFee: 156000, penalty: 620000, lawyerFee: 200000, executionFee: 24000, paidAmount: 0,
+    claimAmount: 5200000, mainDebt: 4200000, stateFee: 156000, fines: 620000, repExpenses: 200000, otherCosts: 24000, paidAmount: 0,
     assignedLawyer: "Касымов А.Б.", branch: "Северный", city: "Астана", judge: "Молдабеков Н.С.",
     filingDate: "2025-03-01", nextHearing: "2025-04-12", paymentDeadline: null, daysOverdue: 0, lastUpdated: "2025-03-29", riskLevel: "low",
+    documents: [],
     payments: [],
     comments: [],
     events: [
@@ -249,11 +281,12 @@ export const mockCases: LegalCase[] = [
     ],
   },
   {
-    id: "10", caseNumber: "2-2222/2024", court: "Районный суд Актау", courtInstance: "first", caseType: "civil", status: "won", partyRole: "plaintiff",
+    id: "10", caseNumber: "2-2222/2024", court: "Районный суд Актау", courtInstance: "first", caseType: "civil", status: "closed", outcome: "fully_satisfied", partyRole: "plaintiff",
     plaintiff: "АО «НК «КТЖ»", defendant: "ТОО «КаспийГруз»", company: "ТОО «КаспийГруз»", companyBIN: "130540023456",
-    claimAmount: 22100000, mainDebt: 18000000, stateFee: 663000, penalty: 2700000, lawyerFee: 600000, executionFee: 137000, paidAmount: 22100000,
+    claimAmount: 22100000, mainDebt: 18000000, stateFee: 663000, fines: 2700000, repExpenses: 600000, otherCosts: 137000, paidAmount: 22100000,
     assignedLawyer: "Бекмуратов Е.Н.", branch: "Западный", city: "Актау", judge: "Омаров Т.Б.",
     filingDate: "2024-05-15", nextHearing: null, paymentDeadline: null, daysOverdue: 0, lastUpdated: "2025-02-10", riskLevel: "low",
+    documents: [],
     payments: [
       { id: "p5", documentNumber: "ПП-2025-000345", payer: "ТОО «КаспийГруз»", payee: "АО «НК «КТЖ»", date: "2025-01-30", amount: 22100000, description: "Полное погашение долга" },
     ],
@@ -267,11 +300,12 @@ export const mockCases: LegalCase[] = [
     ],
   },
   {
-    id: "11", caseNumber: "2-3333/2025", court: "СМЭС Караганды", courtInstance: "first", caseType: "civil", status: "active", partyRole: "defendant",
+    id: "11", caseNumber: "2-3333/2025", court: "СМЭС Караганды", courtInstance: "first", caseType: "civil", status: "active", outcome: "pending", partyRole: "defendant",
     plaintiff: "ТОО «ГорСнаб»", defendant: "АО «НК «КТЖ»", company: "ТОО «ГорСнаб»", companyBIN: "200140045678",
-    claimAmount: 9800000, mainDebt: 8000000, stateFee: 294000, penalty: 1200000, lawyerFee: 250000, executionFee: 56000, paidAmount: 0,
+    claimAmount: 9800000, mainDebt: 8000000, stateFee: 294000, fines: 1200000, repExpenses: 250000, otherCosts: 56000, paidAmount: 0,
     assignedLawyer: "Сагитов Р.М.", branch: "Центральный", city: "Караганда", judge: "Жанабаев Р.К.",
     filingDate: "2025-03-10", nextHearing: "2025-04-18", paymentDeadline: null, daysOverdue: 0, lastUpdated: "2025-03-29", riskLevel: "medium",
+    documents: [],
     payments: [],
     comments: [],
     events: [
@@ -279,11 +313,12 @@ export const mockCases: LegalCase[] = [
     ],
   },
   {
-    id: "12", caseNumber: "2-4444/2024", court: "СМЭС Шымкент", courtInstance: "appeal", caseType: "civil", status: "appeal", partyRole: "plaintiff",
+    id: "12", caseNumber: "2-4444/2024", court: "СМЭС Шымкент", courtInstance: "appeal", caseType: "civil", status: "active", outcome: "pending", partyRole: "plaintiff",
     plaintiff: "АО «НК «КТЖ»", defendant: "ТОО «ЮжТрансЛогистик»", company: "ТОО «ЮжТрансЛогистик»", companyBIN: "160340078901",
-    claimAmount: 41500000, mainDebt: 34000000, stateFee: 1245000, penalty: 4800000, lawyerFee: 1100000, executionFee: 355000, paidAmount: 10000000,
+    claimAmount: 41500000, mainDebt: 34000000, stateFee: 1245000, fines: 4800000, repExpenses: 1100000, otherCosts: 355000, paidAmount: 10000000,
     assignedLawyer: "Нурланова Г.С.", branch: "Южный", city: "Шымкент", judge: "Байгабулов А.С.",
     filingDate: "2024-07-22", nextHearing: "2025-04-22", paymentDeadline: "2025-04-30", daysOverdue: 0, lastUpdated: "2025-03-28", riskLevel: "medium",
+    documents: [],
     payments: [
       { id: "p6", documentNumber: "ПП-2025-001500", payer: "ТОО «ЮжТрансЛогистик»", payee: "АО «НК «КТЖ»", date: "2025-03-01", amount: 10000000, description: "Частичная оплата" },
     ],
@@ -294,41 +329,45 @@ export const mockCases: LegalCase[] = [
     ],
   },
   {
-    id: "13", caseNumber: "2-5555/2026", court: "СМЭС г. Астана", courtInstance: "first", caseType: "civil", status: "active", partyRole: "plaintiff",
+    id: "13", caseNumber: "2-5555/2026", court: "СМЭС г. Астана", courtInstance: "first", caseType: "civil", status: "active", outcome: "pending", partyRole: "plaintiff",
     plaintiff: "АО «НК «КТЖ»", defendant: "ТОО «АстанаТранзит»", company: "ТОО «АстанаТранзит»", companyBIN: "210240056789",
-    claimAmount: 18700000, mainDebt: 15000000, stateFee: 561000, penalty: 2500000, lawyerFee: 500000, executionFee: 139000, paidAmount: 0,
+    claimAmount: 18700000, mainDebt: 15000000, stateFee: 561000, fines: 2500000, repExpenses: 500000, otherCosts: 139000, paidAmount: 0,
     assignedLawyer: "Касымов А.Б.", branch: "Северный", city: "Астана", judge: "Абдрахманов К.Т.",
     filingDate: "2026-04-18", nextHearing: "2026-05-20", paymentDeadline: null, daysOverdue: 0, lastUpdated: "2026-04-19", riskLevel: "low",
+    documents: [],
     payments: [],
     comments: [],
     events: [{ id: "e30", date: "2026-04-18", action: "Дело создано", user: "Касымов А.Б." }],
   },
   {
-    id: "14", caseNumber: "2-5556/2026", court: "Районный суд Алматы", courtInstance: "first", caseType: "civil", status: "active", partyRole: "defendant",
+    id: "14", caseNumber: "2-5556/2026", court: "Районный суд Алматы", courtInstance: "first", caseType: "civil", status: "active", outcome: "pending", partyRole: "defendant",
     plaintiff: "ТОО «АлматыСервис»", defendant: "АО «НК «КТЖ»", company: "ТОО «АлматыСервис»", companyBIN: "200340067890",
-    claimAmount: 7300000, mainDebt: 6000000, stateFee: 219000, penalty: 900000, lawyerFee: 180000, executionFee: 1000, paidAmount: 0,
+    claimAmount: 7300000, mainDebt: 6000000, stateFee: 219000, fines: 900000, repExpenses: 180000, otherCosts: 1000, paidAmount: 0,
     assignedLawyer: "Нурланова Г.С.", branch: "Южный", city: "Алматы", judge: "Сериков М.А.",
     filingDate: "2026-04-15", nextHearing: "2026-05-12", paymentDeadline: null, daysOverdue: 0, lastUpdated: "2026-04-16", riskLevel: "medium",
+    documents: [],
     payments: [],
     comments: [],
     events: [{ id: "e31", date: "2026-04-15", action: "Дело создано", user: "Нурланова Г.С." }],
   },
   {
-    id: "15", caseNumber: "2-5557/2026", court: "СМЭС Павлодар", courtInstance: "first", caseType: "civil", status: "active", partyRole: "plaintiff",
+    id: "15", caseNumber: "2-5557/2026", court: "СМЭС Павлодар", courtInstance: "first", caseType: "civil", status: "active", outcome: "pending", partyRole: "plaintiff",
     plaintiff: "АО «НК «КТЖ»", defendant: "ТОО «ИртышГруз»", company: "ТОО «ИртышГруз»", companyBIN: "220440078901",
-    claimAmount: 29500000, mainDebt: 24000000, stateFee: 885000, penalty: 3800000, lawyerFee: 700000, executionFee: 115000, paidAmount: 0,
+    claimAmount: 29500000, mainDebt: 24000000, stateFee: 885000, fines: 3800000, repExpenses: 700000, otherCosts: 115000, paidAmount: 0,
     assignedLawyer: "Сагитов Р.М.", branch: "Экспресс", city: "Павлодар", judge: "Кенжебаев Т.С.",
     filingDate: "2026-04-14", nextHearing: "2026-05-18", paymentDeadline: null, daysOverdue: 0, lastUpdated: "2026-04-15", riskLevel: "medium",
+    documents: [],
     payments: [],
     comments: [],
     events: [{ id: "e32", date: "2026-04-14", action: "Дело создано", user: "Сагитов Р.М." }],
   },
   {
-    id: "16", caseNumber: "2-5560/2026", court: "СМЭС Караганды", courtInstance: "first", caseType: "civil", status: "won", partyRole: "plaintiff",
+    id: "16", caseNumber: "2-5560/2026", court: "СМЭС Караганды", courtInstance: "first", caseType: "civil", status: "closed", outcome: "fully_satisfied", partyRole: "plaintiff",
     plaintiff: "АО «НК «КТЖ»", defendant: "ТОО «ЦентрЛогистика»", company: "ТОО «ЦентрЛогистика»", companyBIN: "200540089012",
-    claimAmount: 12400000, mainDebt: 10000000, stateFee: 372000, penalty: 1600000, lawyerFee: 350000, executionFee: 78000, paidAmount: 12400000,
+    claimAmount: 12400000, mainDebt: 10000000, stateFee: 372000, fines: 1600000, repExpenses: 350000, otherCosts: 78000, paidAmount: 12400000,
     assignedLawyer: "Ахметов Д.К.", branch: "Центральный", city: "Караганда", judge: "Исмагулова Н.Р.",
     filingDate: "2026-04-05", nextHearing: null, paymentDeadline: null, daysOverdue: 0, lastUpdated: "2026-04-14", riskLevel: "low",
+    documents: [],
     payments: [{ id: "p7", documentNumber: "ПП-2026-000412", payer: "ТОО «ЦентрЛогистика»", payee: "АО «НК «КТЖ»", date: "2026-04-14", amount: 12400000, description: "Полное погашение долга" }],
     comments: [],
     events: [
@@ -338,31 +377,34 @@ export const mockCases: LegalCase[] = [
     ],
   },
   {
-    id: "17", caseNumber: "2-5561/2026", court: "СМЭС Актобе", courtInstance: "first", caseType: "civil", status: "active", partyRole: "plaintiff",
+    id: "17", caseNumber: "2-5561/2026", court: "СМЭС Актобе", courtInstance: "first", caseType: "civil", status: "active", outcome: "pending", partyRole: "plaintiff",
     plaintiff: "АО «НК «КТЖ»", defendant: "ТОО «АктобеТранс»", company: "ТОО «АктобеТранс»", companyBIN: "190640090123",
-    claimAmount: 52000000, mainDebt: 42000000, stateFee: 1560000, penalty: 6800000, lawyerFee: 1400000, executionFee: 240000, paidAmount: 0,
+    claimAmount: 52000000, mainDebt: 42000000, stateFee: 1560000, fines: 6800000, repExpenses: 1400000, otherCosts: 240000, paidAmount: 0,
     assignedLawyer: "Бекмуратов Е.Н.", branch: "Западный", city: "Актобе", judge: "Турсунов Б.Ж.",
     filingDate: "2026-03-28", nextHearing: "2026-05-05", paymentDeadline: null, daysOverdue: 0, lastUpdated: "2026-04-10", riskLevel: "high",
+    documents: [],
     payments: [],
     comments: [],
     events: [{ id: "e36", date: "2026-03-28", action: "Дело создано", user: "Бекмуратов Е.Н." }],
   },
   {
-    id: "18", caseNumber: "2-5562/2026", court: "Районный суд Шымкента", courtInstance: "appeal", caseType: "civil", status: "appeal", partyRole: "defendant",
+    id: "18", caseNumber: "2-5562/2026", court: "Районный суд Шымкента", courtInstance: "appeal", caseType: "civil", status: "active", outcome: "pending", partyRole: "defendant",
     plaintiff: "ТОО «ЮгСтрой»", defendant: "АО «НК «КТЖ»", company: "ТОО «ЮгСтрой»", companyBIN: "180740012345",
-    claimAmount: 8900000, mainDebt: 7200000, stateFee: 267000, penalty: 1100000, lawyerFee: 280000, executionFee: 53000, paidAmount: 0,
+    claimAmount: 8900000, mainDebt: 7200000, stateFee: 267000, fines: 1100000, repExpenses: 280000, otherCosts: 53000, paidAmount: 0,
     assignedLawyer: "Нурланова Г.С.", branch: "Южный", city: "Шымкент", judge: "Козыбаева А.М.",
     filingDate: "2026-03-25", nextHearing: "2026-05-08", paymentDeadline: null, daysOverdue: 0, lastUpdated: "2026-04-05", riskLevel: "high",
+    documents: [],
     payments: [],
     comments: [],
     events: [{ id: "e37", date: "2026-03-25", action: "Дело создано", user: "Нурланова Г.С." }],
   },
   {
-    id: "19", caseNumber: "2-5563/2026", court: "СМЭС г. Астана", courtInstance: "first", caseType: "civil", status: "active", partyRole: "plaintiff",
+    id: "19", caseNumber: "2-5563/2026", court: "СМЭС г. Астана", courtInstance: "first", caseType: "civil", status: "active", outcome: "pending", partyRole: "plaintiff",
     plaintiff: "АО «НК «КТЖ»", defendant: "ТОО «СарыаркаГруз»", company: "ТОО «СарыаркаГруз»", companyBIN: "210840023456",
-    claimAmount: 36800000, mainDebt: 30000000, stateFee: 1104000, penalty: 4500000, lawyerFee: 950000, executionFee: 246000, paidAmount: 5000000,
+    claimAmount: 36800000, mainDebt: 30000000, stateFee: 1104000, fines: 4500000, repExpenses: 950000, otherCosts: 246000, paidAmount: 5000000,
     assignedLawyer: "Касымов А.Б.", branch: "Северный", city: "Астана", judge: "Молдабеков Н.С.",
     filingDate: "2026-03-01", nextHearing: "2026-04-28", paymentDeadline: "2026-05-30", daysOverdue: 0, lastUpdated: "2026-04-01", riskLevel: "medium",
+    documents: [],
     payments: [{ id: "p8", documentNumber: "ПП-2026-000501", payer: "ТОО «СарыаркаГруз»", payee: "АО «НК «КТЖ»", date: "2026-03-25", amount: 5000000, description: "Частичная оплата" }],
     comments: [],
     events: [
@@ -371,11 +413,12 @@ export const mockCases: LegalCase[] = [
     ],
   },
   {
-    id: "20", caseNumber: "2-5564/2026", court: "Районный суд Актау", courtInstance: "first", caseType: "civil", status: "won", partyRole: "plaintiff",
+    id: "20", caseNumber: "2-5564/2026", court: "Районный суд Актау", courtInstance: "first", caseType: "civil", status: "closed", outcome: "fully_satisfied", partyRole: "plaintiff",
     plaintiff: "АО «НК «КТЖ»", defendant: "ТОО «КаспийПорт»", company: "ТОО «КаспийПорт»", companyBIN: "170940034567",
-    claimAmount: 26300000, mainDebt: 21000000, stateFee: 789000, penalty: 3400000, lawyerFee: 700000, executionFee: 211000, paidAmount: 26300000,
+    claimAmount: 26300000, mainDebt: 21000000, stateFee: 789000, fines: 3400000, repExpenses: 700000, otherCosts: 211000, paidAmount: 26300000,
     assignedLawyer: "Бекмуратов Е.Н.", branch: "Западный", city: "Актау", judge: "Омаров Т.Б.",
     filingDate: "2026-02-15", nextHearing: null, paymentDeadline: null, daysOverdue: 0, lastUpdated: "2026-03-20", riskLevel: "low",
+    documents: [],
     payments: [{ id: "p9", documentNumber: "ПП-2026-000620", payer: "ТОО «КаспийПорт»", payee: "АО «НК «КТЖ»", date: "2026-03-20", amount: 26300000, description: "Полное погашение" }],
     comments: [],
     events: [
@@ -385,11 +428,12 @@ export const mockCases: LegalCase[] = [
     ],
   },
   {
-    id: "21", caseNumber: "2-5565/2026", court: "Районный суд Алматы", courtInstance: "first", caseType: "administrative", status: "lost", partyRole: "defendant",
+    id: "21", caseNumber: "2-5565/2026", court: "Районный суд Алматы", courtInstance: "first", caseType: "administrative", status: "closed", outcome: "denied", partyRole: "defendant",
     plaintiff: "ТОО «АлматыПром»", defendant: "АО «НК «КТЖ»", company: "ТОО «АлматыПром»", companyBIN: "150340045678",
-    claimAmount: 11200000, mainDebt: 9000000, stateFee: 336000, penalty: 1500000, lawyerFee: 350000, executionFee: 14000, paidAmount: 0,
+    claimAmount: 11200000, mainDebt: 9000000, stateFee: 336000, fines: 1500000, repExpenses: 350000, otherCosts: 14000, paidAmount: 0,
     assignedLawyer: "Нурланова Г.С.", branch: "Южный", city: "Алматы", judge: "Сериков М.А.",
     filingDate: "2026-01-25", nextHearing: null, paymentDeadline: "2026-04-15", daysOverdue: 5, lastUpdated: "2026-04-18", riskLevel: "high",
+    documents: [],
     payments: [],
     comments: [],
     events: [
@@ -399,11 +443,12 @@ export const mockCases: LegalCase[] = [
     ],
   },
   {
-    id: "22", caseNumber: "2-5566/2025", court: "СМЭС Костанай", courtInstance: "first", caseType: "executive", status: "execution", partyRole: "plaintiff",
+    id: "22", caseNumber: "2-5566/2025", court: "СМЭС Костанай", courtInstance: "first", caseType: "executive", status: "execution", outcome: "pending", partyRole: "plaintiff",
     plaintiff: "АО «НК «КТЖ»", defendant: "ТОО «СеверТранс»", company: "ТОО «СеверТранс»", companyBIN: "190840056789",
-    claimAmount: 19800000, mainDebt: 16000000, stateFee: 594000, penalty: 2600000, lawyerFee: 500000, executionFee: 106000, paidAmount: 9000000,
+    claimAmount: 19800000, mainDebt: 16000000, stateFee: 594000, fines: 2600000, repExpenses: 500000, otherCosts: 106000, paidAmount: 9000000,
     assignedLawyer: "Ахметов Д.К.", branch: "Северный", city: "Костанай", judge: "Рахимова Д.А.",
     filingDate: "2025-11-10", nextHearing: null, paymentDeadline: "2026-03-01", daysOverdue: 50, lastUpdated: "2026-04-10", riskLevel: "medium",
+    documents: [],
     payments: [{ id: "p10", documentNumber: "ПП-2026-000150", payer: "ТОО «СеверТранс»", payee: "АО «НК «КТЖ»", date: "2026-02-15", amount: 9000000, description: "Частичная оплата по исп. производству" }],
     comments: [],
     events: [
@@ -413,11 +458,12 @@ export const mockCases: LegalCase[] = [
     ],
   },
   {
-    id: "23", caseNumber: "2-5567/2025", court: "СМЭС Караганды", courtInstance: "first", caseType: "civil", status: "won", partyRole: "plaintiff",
+    id: "23", caseNumber: "2-5567/2025", court: "СМЭС Караганды", courtInstance: "first", caseType: "civil", status: "closed", outcome: "fully_satisfied", partyRole: "plaintiff",
     plaintiff: "АО «НК «КТЖ»", defendant: "ТОО «СтепьЛогистик»", company: "ТОО «СтепьЛогистик»", companyBIN: "180540067890",
-    claimAmount: 44500000, mainDebt: 36000000, stateFee: 1335000, penalty: 5800000, lawyerFee: 1200000, executionFee: 165000, paidAmount: 44500000,
+    claimAmount: 44500000, mainDebt: 36000000, stateFee: 1335000, fines: 5800000, repExpenses: 1200000, otherCosts: 165000, paidAmount: 44500000,
     assignedLawyer: "Ахметов Д.К.", branch: "Центральный", city: "Караганда", judge: "Исмагулова Н.Р.",
     filingDate: "2025-08-20", nextHearing: null, paymentDeadline: null, daysOverdue: 0, lastUpdated: "2026-01-25", riskLevel: "low",
+    documents: [],
     payments: [{ id: "p11", documentNumber: "ПП-2026-000050", payer: "ТОО «СтепьЛогистик»", payee: "АО «НК «КТЖ»", date: "2026-01-20", amount: 44500000, description: "Полное погашение долга" }],
     comments: [],
     events: [
@@ -427,11 +473,12 @@ export const mockCases: LegalCase[] = [
     ],
   },
   {
-    id: "24", caseNumber: "2-5568/2025", court: "Верховный суд РК", courtInstance: "cassation", caseType: "civil", status: "cassation", partyRole: "plaintiff",
+    id: "24", caseNumber: "2-5568/2025", court: "Верховный суд РК", courtInstance: "cassation", caseType: "civil", status: "active", outcome: "pending", partyRole: "plaintiff",
     plaintiff: "АО «НК «КТЖ»", defendant: "ТОО «БайконурТранс»", company: "ТОО «БайконурТранс»", companyBIN: "160240089012",
-    claimAmount: 67000000, mainDebt: 55000000, stateFee: 2010000, penalty: 8500000, lawyerFee: 1800000, executionFee: 690000, paidAmount: 0,
+    claimAmount: 67000000, mainDebt: 55000000, stateFee: 2010000, fines: 8500000, repExpenses: 1800000, otherCosts: 690000, paidAmount: 0,
     assignedLawyer: "Касымов А.Б.", branch: "Северный", city: "Астана", judge: "Жумабаев С.К.",
     filingDate: "2025-05-15", nextHearing: "2026-05-15", paymentDeadline: null, daysOverdue: 0, lastUpdated: "2026-04-01", riskLevel: "high",
+    documents: [],
     payments: [],
     comments: [],
     events: [
@@ -440,11 +487,12 @@ export const mockCases: LegalCase[] = [
     ],
   },
   {
-    id: "25", caseNumber: "2-0101/2022", court: "СМЭС г. Астана", courtInstance: "first", caseType: "civil", status: "won", partyRole: "plaintiff",
+    id: "25", caseNumber: "2-0101/2022", court: "СМЭС г. Астана", courtInstance: "first", caseType: "civil", status: "closed", outcome: "fully_satisfied", partyRole: "plaintiff",
     plaintiff: "АО «НК «КТЖ»", defendant: "ТОО «СтарТранс»", company: "ТОО «СтарТранс»", companyBIN: "100140011111",
-    claimAmount: 14200000, mainDebt: 11500000, stateFee: 426000, penalty: 1800000, lawyerFee: 400000, executionFee: 74000, paidAmount: 14200000,
+    claimAmount: 14200000, mainDebt: 11500000, stateFee: 426000, fines: 1800000, repExpenses: 400000, otherCosts: 74000, paidAmount: 14200000,
     assignedLawyer: "Касымов А.Б.", branch: "Северный", city: "Астана", judge: "Абдрахманов К.Т.",
     filingDate: "2022-05-10", nextHearing: null, paymentDeadline: null, daysOverdue: 0, lastUpdated: "2022-11-20", riskLevel: "low",
+    documents: [],
     payments: [{ id: "p12", documentNumber: "ПП-2022-000101", payer: "ТОО «СтарТранс»", payee: "АО «НК «КТЖ»", date: "2022-11-15", amount: 14200000, description: "Полное погашение долга" }],
     comments: [],
     events: [
@@ -454,11 +502,12 @@ export const mockCases: LegalCase[] = [
     ],
   },
   {
-    id: "26", caseNumber: "2-0202/2022", court: "Районный суд Алматы", courtInstance: "first", caseType: "civil", status: "won", partyRole: "plaintiff",
+    id: "26", caseNumber: "2-0202/2022", court: "Районный суд Алматы", courtInstance: "first", caseType: "civil", status: "closed", outcome: "fully_satisfied", partyRole: "plaintiff",
     plaintiff: "АО «НК «КТЖ»", defendant: "ТОО «АлаТауЛогистик»", company: "ТОО «АлаТауЛогистик»", companyBIN: "110240022222",
-    claimAmount: 32500000, mainDebt: 26000000, stateFee: 975000, penalty: 4200000, lawyerFee: 900000, executionFee: 425000, paidAmount: 32500000,
+    claimAmount: 32500000, mainDebt: 26000000, stateFee: 975000, fines: 4200000, repExpenses: 900000, otherCosts: 425000, paidAmount: 32500000,
     assignedLawyer: "Нурланова Г.С.", branch: "Южный", city: "Алматы", judge: "Сериков М.А.",
     filingDate: "2022-08-15", nextHearing: null, paymentDeadline: null, daysOverdue: 0, lastUpdated: "2023-03-01", riskLevel: "low",
+    documents: [],
     payments: [{ id: "p13", documentNumber: "ПП-2023-000055", payer: "ТОО «АлаТауЛогистик»", payee: "АО «НК «КТЖ»", date: "2023-02-25", amount: 32500000, description: "Полное погашение" }],
     comments: [],
     events: [
@@ -468,11 +517,12 @@ export const mockCases: LegalCase[] = [
     ],
   },
   {
-    id: "27", caseNumber: "2-0303/2022", court: "СМЭС Шымкент", courtInstance: "first", caseType: "administrative", status: "lost", partyRole: "defendant",
+    id: "27", caseNumber: "2-0303/2022", court: "СМЭС Шымкент", courtInstance: "first", caseType: "administrative", status: "closed", outcome: "denied", partyRole: "defendant",
     plaintiff: "ТОО «ОтрарСервис»", defendant: "АО «НК «КТЖ»", company: "ТОО «ОтрарСервис»", companyBIN: "090340033333",
-    claimAmount: 9400000, mainDebt: 7600000, stateFee: 282000, penalty: 1200000, lawyerFee: 280000, executionFee: 38000, paidAmount: 9400000,
+    claimAmount: 9400000, mainDebt: 7600000, stateFee: 282000, fines: 1200000, repExpenses: 280000, otherCosts: 38000, paidAmount: 9400000,
     assignedLawyer: "Нурланова Г.С.", branch: "Южный", city: "Шымкент", judge: "Козыбаева А.М.",
     filingDate: "2022-11-20", nextHearing: null, paymentDeadline: "2023-04-15", daysOverdue: 0, lastUpdated: "2023-04-20", riskLevel: "medium",
+    documents: [],
     payments: [{ id: "p14", documentNumber: "ПП-2023-000220", payer: "АО «НК «КТЖ»", payee: "ТОО «ОтрарСервис»", date: "2023-04-10", amount: 9400000, description: "Оплата по решению суда" }],
     comments: [],
     events: [
@@ -482,11 +532,12 @@ export const mockCases: LegalCase[] = [
     ],
   },
   {
-    id: "28", caseNumber: "2-0404/2023", court: "Районный суд Актау", courtInstance: "first", caseType: "civil", status: "closed", partyRole: "plaintiff",
+    id: "28", caseNumber: "2-0404/2023", court: "Районный суд Актау", courtInstance: "first", caseType: "civil", status: "closed", outcome: "settled", partyRole: "plaintiff",
     plaintiff: "АО «НК «КТЖ»", defendant: "ТОО «МангистауПорт»", company: "ТОО «МангистауПорт»", companyBIN: "080440044444",
-    claimAmount: 6800000, mainDebt: 5500000, stateFee: 204000, penalty: 850000, lawyerFee: 200000, executionFee: 46000, paidAmount: 6800000,
+    claimAmount: 6800000, mainDebt: 5500000, stateFee: 204000, fines: 850000, repExpenses: 200000, otherCosts: 46000, paidAmount: 6800000,
     assignedLawyer: "Бекмуратов Е.Н.", branch: "Западный", city: "Актау", judge: "Омаров Т.Б.",
     filingDate: "2023-01-25", nextHearing: null, paymentDeadline: null, daysOverdue: 0, lastUpdated: "2023-07-10", riskLevel: "low",
+    documents: [],
     payments: [{ id: "p15", documentNumber: "ПП-2023-000312", payer: "ТОО «МангистауПорт»", payee: "АО «НК «КТЖ»", date: "2023-07-05", amount: 6800000, description: "Полное мировое урегулирование" }],
     comments: [],
     events: [
@@ -495,11 +546,12 @@ export const mockCases: LegalCase[] = [
     ],
   },
   {
-    id: "29", caseNumber: "2-0505/2023", court: "СМЭС Караганды", courtInstance: "first", caseType: "civil", status: "won", partyRole: "plaintiff",
+    id: "29", caseNumber: "2-0505/2023", court: "СМЭС Караганды", courtInstance: "first", caseType: "civil", status: "closed", outcome: "fully_satisfied", partyRole: "plaintiff",
     plaintiff: "АО «НК «КТЖ»", defendant: "ТОО «УгольТранс»", company: "ТОО «УгольТранс»", companyBIN: "070540055555",
-    claimAmount: 58000000, mainDebt: 47000000, stateFee: 1740000, penalty: 7500000, lawyerFee: 1600000, executionFee: 160000, paidAmount: 58000000,
+    claimAmount: 58000000, mainDebt: 47000000, stateFee: 1740000, fines: 7500000, repExpenses: 1600000, otherCosts: 160000, paidAmount: 58000000,
     assignedLawyer: "Ахметов Д.К.", branch: "Центральный", city: "Караганда", judge: "Исмагулова Н.Р.",
     filingDate: "2023-03-05", nextHearing: null, paymentDeadline: null, daysOverdue: 0, lastUpdated: "2023-10-18", riskLevel: "low",
+    documents: [],
     payments: [{ id: "p16", documentNumber: "ПП-2023-000780", payer: "ТОО «УгольТранс»", payee: "АО «НК «КТЖ»", date: "2023-10-15", amount: 58000000, description: "Полное погашение долга" }],
     comments: [],
     events: [
@@ -509,11 +561,12 @@ export const mockCases: LegalCase[] = [
     ],
   },
   {
-    id: "30", caseNumber: "2-0606/2023", court: "СМЭС Павлодар", courtInstance: "appeal", caseType: "civil", status: "lost", partyRole: "plaintiff",
+    id: "30", caseNumber: "2-0606/2023", court: "СМЭС Павлодар", courtInstance: "appeal", caseType: "civil", status: "closed", outcome: "denied", partyRole: "plaintiff",
     plaintiff: "АО «НК «КТЖ»", defendant: "ТОО «ИртышПорт»", company: "ТОО «ИртышПорт»", companyBIN: "060640066666",
-    claimAmount: 17300000, mainDebt: 14000000, stateFee: 519000, penalty: 2200000, lawyerFee: 550000, executionFee: 31000, paidAmount: 0,
+    claimAmount: 17300000, mainDebt: 14000000, stateFee: 519000, fines: 2200000, repExpenses: 550000, otherCosts: 31000, paidAmount: 0,
     assignedLawyer: "Сагитов Р.М.", branch: "Экспресс", city: "Павлодар", judge: "Кенжебаев Т.С.",
     filingDate: "2023-06-18", nextHearing: null, paymentDeadline: null, daysOverdue: 0, lastUpdated: "2024-02-14", riskLevel: "high",
+    documents: [],
     payments: [],
     comments: [],
     events: [
@@ -522,11 +575,12 @@ export const mockCases: LegalCase[] = [
     ],
   },
   {
-    id: "31", caseNumber: "2-0707/2023", court: "СМЭС Актобе", courtInstance: "first", caseType: "civil", status: "won", partyRole: "plaintiff",
+    id: "31", caseNumber: "2-0707/2023", court: "СМЭС Актобе", courtInstance: "first", caseType: "civil", status: "closed", outcome: "fully_satisfied", partyRole: "plaintiff",
     plaintiff: "АО «НК «КТЖ»", defendant: "ТОО «ЗападСтрой»", company: "ТОО «ЗападСтрой»", companyBIN: "050740077777",
-    claimAmount: 24800000, mainDebt: 20000000, stateFee: 744000, penalty: 3200000, lawyerFee: 700000, executionFee: 156000, paidAmount: 24800000,
+    claimAmount: 24800000, mainDebt: 20000000, stateFee: 744000, fines: 3200000, repExpenses: 700000, otherCosts: 156000, paidAmount: 24800000,
     assignedLawyer: "Бекмуратов Е.Н.", branch: "Западный", city: "Актобе", judge: "Турсунов Б.Ж.",
     filingDate: "2023-09-12", nextHearing: null, paymentDeadline: null, daysOverdue: 0, lastUpdated: "2024-04-05", riskLevel: "low",
+    documents: [],
     payments: [{ id: "p17", documentNumber: "ПП-2024-000120", payer: "ТОО «ЗападСтрой»", payee: "АО «НК «КТЖ»", date: "2024-04-01", amount: 24800000, description: "Полное погашение" }],
     comments: [],
     events: [
@@ -536,11 +590,12 @@ export const mockCases: LegalCase[] = [
     ],
   },
   {
-    id: "32", caseNumber: "2-0808/2023", court: "Районный суд Алматы", courtInstance: "first", caseType: "civil", status: "closed", partyRole: "defendant",
+    id: "32", caseNumber: "2-0808/2023", court: "Районный суд Алматы", courtInstance: "first", caseType: "civil", status: "closed", outcome: "settled", partyRole: "defendant",
     plaintiff: "ТОО «ЮжПром»", defendant: "АО «НК «КТЖ»", company: "ТОО «ЮжПром»", companyBIN: "040840088888",
-    claimAmount: 4200000, mainDebt: 3400000, stateFee: 126000, penalty: 530000, lawyerFee: 120000, executionFee: 24000, paidAmount: 0,
+    claimAmount: 4200000, mainDebt: 3400000, stateFee: 126000, fines: 530000, repExpenses: 120000, otherCosts: 24000, paidAmount: 0,
     assignedLawyer: "Нурланова Г.С.", branch: "Южный", city: "Алматы", judge: "Сериков М.А.",
     filingDate: "2023-11-08", nextHearing: null, paymentDeadline: null, daysOverdue: 0, lastUpdated: "2024-03-15", riskLevel: "low",
+    documents: [],
     payments: [],
     comments: [],
     events: [
@@ -549,11 +604,12 @@ export const mockCases: LegalCase[] = [
     ],
   },
   {
-    id: "33", caseNumber: "2-0909/2024", court: "СМЭС г. Астана", courtInstance: "first", caseType: "civil", status: "won", partyRole: "plaintiff",
+    id: "33", caseNumber: "2-0909/2024", court: "СМЭС г. Астана", courtInstance: "first", caseType: "civil", status: "closed", outcome: "fully_satisfied", partyRole: "plaintiff",
     plaintiff: "АО «НК «КТЖ»", defendant: "ТОО «СтолицаТранс»", company: "ТОО «СтолицаТранс»", companyBIN: "030940099999",
-    claimAmount: 38900000, mainDebt: 31500000, stateFee: 1167000, penalty: 5000000, lawyerFee: 1100000, executionFee: 133000, paidAmount: 38900000,
+    claimAmount: 38900000, mainDebt: 31500000, stateFee: 1167000, fines: 5000000, repExpenses: 1100000, otherCosts: 133000, paidAmount: 38900000,
     assignedLawyer: "Касымов А.Б.", branch: "Северный", city: "Астана", judge: "Абдрахманов К.Т.",
     filingDate: "2024-01-15", nextHearing: null, paymentDeadline: null, daysOverdue: 0, lastUpdated: "2024-09-22", riskLevel: "low",
+    documents: [],
     payments: [{ id: "p18", documentNumber: "ПП-2024-000680", payer: "ТОО «СтолицаТранс»", payee: "АО «НК «КТЖ»", date: "2024-09-18", amount: 38900000, description: "Полное погашение долга" }],
     comments: [],
     events: [
@@ -563,11 +619,12 @@ export const mockCases: LegalCase[] = [
     ],
   },
   {
-    id: "34", caseNumber: "2-1010/2024", court: "СМЭС Караганды", courtInstance: "first", caseType: "civil", status: "won", partyRole: "plaintiff",
+    id: "34", caseNumber: "2-1010/2024", court: "СМЭС Караганды", courtInstance: "first", caseType: "civil", status: "closed", outcome: "fully_satisfied", partyRole: "plaintiff",
     plaintiff: "АО «НК «КТЖ»", defendant: "ТОО «ПромРесурс»", company: "ТОО «ПромРесурс»", companyBIN: "021040100001",
-    claimAmount: 11600000, mainDebt: 9400000, stateFee: 348000, penalty: 1500000, lawyerFee: 330000, executionFee: 22000, paidAmount: 11600000,
+    claimAmount: 11600000, mainDebt: 9400000, stateFee: 348000, fines: 1500000, repExpenses: 330000, otherCosts: 22000, paidAmount: 11600000,
     assignedLawyer: "Ахметов Д.К.", branch: "Центральный", city: "Караганда", judge: "Исмагулова Н.Р.",
     filingDate: "2024-02-22", nextHearing: null, paymentDeadline: null, daysOverdue: 0, lastUpdated: "2024-08-30", riskLevel: "low",
+    documents: [],
     payments: [{ id: "p19", documentNumber: "ПП-2024-000540", payer: "ТОО «ПромРесурс»", payee: "АО «НК «КТЖ»", date: "2024-08-28", amount: 11600000, description: "Полное погашение долга" }],
     comments: [],
     events: [
@@ -616,7 +673,7 @@ export const getCounterparties = (): Counterparty[] => {
     const existing = map.get(c.companyBIN);
     if (existing) {
       existing.totalCases++;
-      existing.activeCases += ["active", "appeal", "cassation", "execution"].includes(c.status) ? 1 : 0;
+      existing.activeCases += ["active", "mediation", "suspended", "execution"].includes(c.status) ? 1 : 0;
       existing.totalDebt += c.mainDebt;
       existing.totalPaid += c.paidAmount;
       if (c.filingDate > existing.lastCaseDate) existing.lastCaseDate = c.filingDate;
@@ -625,7 +682,7 @@ export const getCounterparties = (): Counterparty[] => {
         bin: c.companyBIN,
         name: c.company,
         totalCases: 1,
-        activeCases: ["active", "appeal", "cassation", "execution"].includes(c.status) ? 1 : 0,
+        activeCases: ["active", "mediation", "suspended", "execution"].includes(c.status) ? 1 : 0,
         totalDebt: c.mainDebt,
         totalPaid: c.paidAmount,
         lastCaseDate: c.filingDate,
@@ -649,9 +706,9 @@ export const formatAmountShort = (amount: number): string => {
 export const getLawyerStats = () => {
   return lawyers.map(lawyer => {
     const cases = mockCases.filter(c => c.assignedLawyer === lawyer);
-    const won = cases.filter(c => c.status === "won").length;
-    const lost = cases.filter(c => c.status === "lost").length;
-    const active = cases.filter(c => ["active", "appeal", "cassation", "execution"].includes(c.status)).length;
+    const won = cases.filter(c => c.outcome === "fully_satisfied" || c.outcome === "partially_satisfied" || c.outcome === "settled").length;
+    const lost = cases.filter(c => c.outcome === "denied" || c.outcome === "dismissed").length;
+    const active = cases.filter(c => ["active", "mediation", "suspended", "execution"].includes(c.status)).length;
     const totalAmount = cases.reduce((s, c) => s + c.claimAmount, 0);
     const avgDays = cases.length > 0 ? Math.round(cases.reduce((s, c) => {
       const start = new Date(c.filingDate);
@@ -719,7 +776,7 @@ export const setCurrentUser = (userId: string) => {
 };
 
 // Permissions helper
-export const canViewAllCases = (user: User): boolean => user.role === "director" || user.role === "accountant";
+export const canViewAllCases = (user: User): boolean => user.role === "director" || user.role === "accountant" || user.branch === "Центральный аппарат";
 export const canViewAllBranches = (user: User): boolean => user.role === "director";
 export const canViewAllAnalytics = (user: User): boolean => user.role === "director";
 export const canViewAuditLog = (user: User): boolean => user.role === "director";
@@ -733,6 +790,10 @@ export const canViewLawyerStats = (user: User): boolean => user.role === "direct
 export const canAddCase = (user: User): boolean => user.role === "branch_lawyer";
 
 export const CASES_CHANGE_EVENT = "casechange";
+
+export const notifyCasesChanged = () => {
+  notifyCasesChanged();
+};
 
 export const addCase = (c: LegalCase) => {
   mockCases.push(c);

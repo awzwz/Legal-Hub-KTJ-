@@ -25,7 +25,7 @@ const CounterpartiesPage = ({ onCaseClick }: CounterpartiesPageProps) => {
       const existing = map.get(c.companyBIN);
       if (existing) {
         existing.totalCases++;
-        existing.activeCases += ["active", "appeal", "cassation", "execution"].includes(c.status) ? 1 : 0;
+        existing.activeCases += ["active", "mediation", "suspended", "execution"].includes(c.status) ? 1 : 0;
         existing.totalDebt += c.mainDebt;
         existing.totalPaid += c.paidAmount;
         if (c.filingDate > existing.lastCaseDate) existing.lastCaseDate = c.filingDate;
@@ -34,7 +34,7 @@ const CounterpartiesPage = ({ onCaseClick }: CounterpartiesPageProps) => {
           bin: c.companyBIN,
           name: c.company,
           totalCases: 1,
-          activeCases: ["active", "appeal", "cassation", "execution"].includes(c.status) ? 1 : 0,
+          activeCases: ["active", "mediation", "suspended", "execution"].includes(c.status) ? 1 : 0,
           totalDebt: c.mainDebt,
           totalPaid: c.paidAmount,
           lastCaseDate: c.filingDate,
@@ -150,8 +150,8 @@ const CounterpartiesPage = ({ onCaseClick }: CounterpartiesPageProps) => {
                           <span className="font-medium">{c.caseNumber}</span>
                           <span className="text-[10px] text-muted-foreground">{c.branch}</span>
                           <span className={cn("status-badge text-[10px]",
-                            c.status === "won" ? "bg-success/10 text-success" :
-                            c.status === "lost" ? "bg-overdue/10 text-overdue" :
+                            c.outcome === "fully_satisfied" ? "bg-success/10 text-success" :
+                            c.outcome === "denied" ? "bg-overdue/10 text-overdue" :
                             "bg-primary/10 text-primary"
                           )}>{caseStatusLabels[c.status]}</span>
                         </div>
@@ -239,8 +239,8 @@ const CounterpartiesPage = ({ onCaseClick }: CounterpartiesPageProps) => {
                         <td className="px-3 py-2 text-muted-foreground">{caseTypeLabels[c.caseType]}</td>
                         <td className="px-3 py-2">
                           <span className={cn("inline-block px-1.5 py-0.5 rounded text-[10px] font-medium",
-                            c.status === "won" ? "bg-success/10 text-success" :
-                            c.status === "lost" ? "bg-overdue/10 text-overdue" :
+                            c.outcome === "fully_satisfied" ? "bg-success/10 text-success" :
+                            c.outcome === "denied" ? "bg-overdue/10 text-overdue" :
                             "bg-primary/10 text-primary"
                           )}>
                             {caseStatusLabels[c.status]}
