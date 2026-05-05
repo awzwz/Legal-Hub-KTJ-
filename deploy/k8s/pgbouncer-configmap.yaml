@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: pgbouncer-config
+data:
+  pgbouncer.ini: |
+    [databases]
+    legalhub = host=postgres port=5432 dbname=legalhub
+    [pgbouncer]
+    listen_addr = 0.0.0.0
+    listen_port = 6432
+    auth_type = scram-sha-256
+    pool_mode = transaction
+    max_client_conn = 1000
+    default_pool_size = 25

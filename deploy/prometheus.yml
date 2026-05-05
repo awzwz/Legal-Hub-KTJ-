@@ -1,0 +1,12 @@
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  - job_name: legalhub
+    metrics_path: /metrics
+    static_configs:
+      - targets:
+          - host.docker.internal:8001
+          - host.docker.internal:8002
+          - host.docker.internal:8003
+          - host.docker.internal:8004

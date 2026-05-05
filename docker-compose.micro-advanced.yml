@@ -1,0 +1,12 @@
+# Переопределение для отдельной БД IAM (пример). Запуск:
+#   docker compose -f docker-compose.yml -f docker-compose.micro-advanced.yml up -d
+#
+# Требуется: том Postgres создан заново или БД legalhub_iam создана вручную (см. docker/postgres-init).
+# Пользователи в IAM БД появятся из сида `run_iam_identity_seed_if_empty` при первом старте.
+
+services:
+  svc-iam:
+    environment:
+      DATABASE_URL: postgresql+asyncpg://legalhub:legalhub@db:5432/legalhub_iam
+      IAM_DATABASE_URL: postgresql+asyncpg://legalhub:legalhub@db:5432/legalhub_iam
+    command: ["sh", "-c", "uvicorn app.svc.iam:app --host 0.0.0.0 --port 8001"]

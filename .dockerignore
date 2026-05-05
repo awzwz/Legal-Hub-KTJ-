@@ -1,0 +1,14 @@
+node_modules
+frontend/node_modules
+dist
+frontend/dist
+.git
+backend/.venv
+**/__pycache__
+*.pyc
+.env
+.cursor
+playwright-report
+test-results
+# Web image only copies frontend/ + docker/nginx-spa.conf; skip backend for smaller build context
+backend/

@@ -1,0 +1,143 @@
+# Production docker-compose for a single EC2 host (demo / pilot).
+#
+# Принципы:
+#   * Никаких публичных портов кроме 80/443 (через Caddy).
+#   * Все секреты приходят из .env.prod (он рядом с этим файлом, в .gitignore).
+#   * Postgres-том вынесен в bind-mount /opt/legalhub/pgdata, чтобы pg_dump
+#     можно было снимать без рейса с docker volume prune.
+#   * Caddy сам получает Let's Encrypt сертификат на ${LEGALHUB_DOMAIN}.
+#
+# Запуск:
+#   docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build
+
+services:
+  db:
+    image: postgres:15-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - /opt/legalhub/pgdata:/var/lib/postgresql/data
+      - ../../docker/postgres-init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--save", "60", "1", "--loglevel", "warning"]
+    volumes:
+      - /opt/legalhub/redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  migrate:
+    build:
+      context: ../../backend
+      dockerfile: Dockerfile
+    command: ["alembic", "upgrade", "head"]
+    environment: &api_env
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+      REDIS_URL: redis://redis:6379/0
+      RELAX_AUTH: "false"
+      AUTO_DDL: "false"
+      JWT_SECRET: ${JWT_SECRET}
+      INTERNAL_API_KEY: ${INTERNAL_API_KEY}
+      CORS_ORIGINS: ${CORS_ORIGINS}
+      LOG_JSON: "true"
+    depends_on:
+      db:
+        condition: service_healthy
+
+  svc-iam:
+    build:
+      context: ../../backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    command: ["uvicorn", "app.svc.iam:app", "--host", "0.0.0.0", "--port", "8001"]
+    environment: *api_env
+    depends_on:
+      db: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      migrate: { condition: service_completed_successfully }
+    expose:
+      - "8001"
+
+  svc-legal:
+    build:
+      context: ../../backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    command: ["uvicorn", "app.svc.legal:app", "--host", "0.0.0.0", "--port", "8002"]
+    environment: *api_env
+    depends_on:
+      db: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      migrate: { condition: service_completed_successfully }
+    expose:
+      - "8002"
+
+  svc-workspace:
+    build:
+      context: ../../backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    command: ["uvicorn", "app.svc.workspace:app", "--host", "0.0.0.0", "--port", "8003"]
+    environment: *api_env
+    depends_on:
+      db: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      migrate: { condition: service_completed_successfully }
+    expose:
+      - "8003"
+
+  svc-reporting:
+    build:
+      context: ../../backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    command: ["uvicorn", "app.svc.reporting:app", "--host", "0.0.0.0", "--port", "8004"]
+    environment: *api_env
+    depends_on:
+      db: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      migrate: { condition: service_completed_successfully }
+    expose:
+      - "8004"
+
+  web:
+    build:
+      context: ../..
+      dockerfile: frontend/Dockerfile
+    restart: unless-stopped
+    expose:
+      - "80"
+    depends_on:
+      - svc-iam
+      - svc-legal
+      - svc-workspace
+      - svc-reporting
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      LEGALHUB_DOMAIN: ${LEGALHUB_DOMAIN}
+      LETS_ENCRYPT_EMAIL: ${LETS_ENCRYPT_EMAIL}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - /opt/legalhub/caddy_data:/data
+      - /opt/legalhub/caddy_config:/config
+    depends_on:
+      - web

@@ -22,3 +22,21 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Python backend
+backend/.venv/
+backend/**/__pycache__/
+backend/.env
+backend/contracts/openapi/*.openapi.json
+
+# Deploy secrets (никогда не коммитим прод-секреты)
+deploy/aws/.env.prod
+deploy/aws/.env.*.local
+
+# AI / IDE — не в репозиторий
+.cursor/
+.claude/
+**/.claude/
+
+# Локальные venv вне backend/.venv
+.venv-pir/

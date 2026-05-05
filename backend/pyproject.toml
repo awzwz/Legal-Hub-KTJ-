@@ -1,0 +1,10 @@
+[project]
+name = "legalhub-backend"
+version = "0.1.0"
+description = "LegalHUB FastAPI backend"
+readme = "README.md"
+requires-python = ">=3.10"
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"

@@ -1,0 +1,125 @@
+services:
+  db:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: legalhub
+      POSTGRES_PASSWORD: legalhub
+      POSTGRES_DB: legalhub
+    ports:
+      - "5432:5432"
+    volumes:
+      - legalhub_pg_data:/var/lib/postgresql/data
+      - ./docker/postgres-init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U legalhub -d legalhub"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # Одна точка миграций: иначе 4× `alembic upgrade` гоняются за одну БД и ломают параллельные revision.
+  migrate:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    command: ["alembic", "upgrade", "head"]
+    environment: &api_env
+      DATABASE_URL: postgresql+asyncpg://legalhub:legalhub@db:5432/legalhub
+      REDIS_URL: redis://redis:6379/0
+      RELAX_AUTH: "true"
+      AUTO_DDL: "false"
+      JWT_SECRET: docker-dev-only-change-me
+      INTERNAL_API_KEY: docker-internal-key
+      CORS_ORIGINS: http://127.0.0.1:8080,http://localhost:8080
+    depends_on:
+      db:
+        condition: service_healthy
+
+  # --- Микросервисы (общий образ backend, разные uvicorn-модули) ---
+  svc-iam:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    command: ["uvicorn", "app.svc.iam:app", "--host", "0.0.0.0", "--port", "8001"]
+    environment: *api_env
+    ports:
+      - "8001:8001"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
+  svc-legal:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    command: ["uvicorn", "app.svc.legal:app", "--host", "0.0.0.0", "--port", "8002"]
+    environment: *api_env
+    ports:
+      - "8002:8002"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
+  svc-workspace:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    command: ["uvicorn", "app.svc.workspace:app", "--host", "0.0.0.0", "--port", "8003"]
+    environment: *api_env
+    ports:
+      - "8003:8003"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
+  svc-reporting:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    command: ["uvicorn", "app.svc.reporting:app", "--host", "0.0.0.0", "--port", "8004"]
+    environment: *api_env
+    ports:
+      - "8004:8004"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
+  web:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    ports:
+      - "8080:80"
+    depends_on:
+      - svc-iam
+      - svc-legal
+      - svc-workspace
+      - svc-reporting
+
+volumes:
+  legalhub_pg_data:

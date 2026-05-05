@@ -1,0 +1,479 @@
+export type CaseStatus = "active" | "mediation" | "suspended" | "execution" | "closed";
+export type CaseOutcome = "fully_satisfied" | "partially_satisfied" | "denied" | "settled" | "dismissed" | "pending";
+export type CourtInstance = "first" | "appeal" | "cassation" | "supreme";
+export type CaseType = "civil" | "administrative" | "criminal" | "executive" | "labor" | "tax" | "corporate" | "other";
+export type PartyRole = "plaintiff" | "defendant" | "third_party";
+
+/**
+ * Раздел шаблона ПИР, в который дело попадёт при экспорте.
+ * - procurement     — Иски, связанные с нарушением законодательства о закупках и вытекающие из договоров
+ * - transportation  — Иски, вытекающие из перевозочного процесса (только для роли «ответчик» в шаблоне)
+ * - labor           — Трудовые споры
+ * - other           — Иные споры
+ * - mediation       — Медиативные соглашения
+ */
+export type DisputeCategory = "procurement" | "transportation" | "labor" | "other" | "mediation";
+
+export interface Payment {
+  id: string;
+  documentNumber: string;
+  payer: string;
+  payee: string;
+  date: string;
+  amount: number;
+  description: string;
+}
+
+
+export interface CaseDocument {
+  id: string;
+  title: string;
+  uploadDate: string;
+  author: string;
+}
+
+export interface CaseComment {
+  id: string;
+  author: string;
+  role: string;
+  text: string;
+  type: "question" | "clarify" | "problem" | "info";
+  date: string;
+  likes: number;
+}
+
+export interface CaseEvent {
+  id: string;
+  date: string;
+  action: string;
+  user: string;
+  detail?: string;
+}
+
+/** PIR / case extensions (from API; optional in offline mocks). */
+export interface CaseLitigationBlock {
+  claimSummary: string;
+  judgmentFirst: string;
+  judgmentAppeal: string;
+  judgmentCassation: string;
+  damageRecoveryNote: string;
+  /** ПИР «истец» кол. 16 */
+  writRequestNote?: string;
+  /** ПИР «истец» кол. 17 */
+  writDispatchNote?: string;
+  /** ПИР «истец» кол. 18 */
+  executionProofNote?: string;
+  /** ПИР «ответчик» кол. 18 — информация об исполнении (№, дата документа). */
+  defendantExecutionNote?: string;
+  /** ПИР «3-лицо» / «в качестве 3 лица» кол. 19 — примечание. */
+  thirdPartyNote?: string;
+  updatedAt?: string | null;
+}
+
+export interface EnforcementProceedingRow {
+  id: string;
+  debtorName: string;
+  debtorBin?: string | null;
+  courtActSummary: string;
+  amountTotal: number;
+  amountMain: number;
+  amountFines: number;
+  amountFees: number;
+  progressNotes: string;
+  collectedAmount: number;
+  collectionDocRef: string;
+  balanceRemaining: number;
+  statusLabel: string;
+  recordedAt: string;
+}
+
+export interface DebtRecoveryEntryRow {
+  id: string;
+  caseId?: string | null;
+  counterpartyBin?: string | null;
+  debtorName: string;
+  debtorStatus: string;
+  debtAmount: number;
+  paidAmount: number;
+  writtenOffAmount: number;
+  workSummary: string;
+  recordedAt: string;
+}
+
+export interface LegalCase {
+  id: string;
+  caseNumber: string;
+  court: string;
+  courtInstance: CourtInstance;
+  caseType: CaseType;
+  status: CaseStatus;
+  outcome: CaseOutcome;
+  partyRole: PartyRole;
+  opponentType: "juridical" | "physical";
+  plaintiff: string;
+  defendant: string;
+  company: string;
+  companyBIN: string;
+  claimAmount: number;
+  mainDebt: number;
+  stateFee: number;
+  fines: number;
+  repExpenses: number;
+  otherCosts: number;
+  paidAmount: number;
+  /** ПИР лист «истец»: взысканная сумма (кол. 13–15) */
+  recoveredMain?: number;
+  recoveredFines?: number;
+  recoveredStateFee?: number;
+  /** ПИР листы «ответчик» (кол. 16) и «3-лицо» (кол. 17): взысканные представительские расходы. */
+  recoveredRepExpenses?: number;
+  /** Раздел в шаблоне ПИР, в который дело попадёт при экспорте. По умолчанию — закупки. */
+  disputeCategory?: DisputeCategory;
+  assignedLawyer: string;
+  /** UUID филиала (из API) */
+  branchId?: string;
+  /** UUID назначенного юриста (из API) */
+  assignedLawyerId?: string | null;
+  branch: string;
+  city: string;
+  judge: string;
+  filingDate: string;
+  nextHearing: string | null | "not_set";
+  paymentDeadline: string | null;
+  daysOverdue: number;
+  lastUpdated: string;
+  riskLevel: "low" | "medium" | "high";
+  payments: Payment[];
+  documents: CaseDocument[];
+  comments: CaseComment[];
+  events: CaseEvent[];
+  /** Судебные материалы для выгрузки ПИР */
+  litigation?: CaseLitigationBlock;
+  enforcementProceedings?: EnforcementProceedingRow[];
+  debtRecoveryEntries?: DebtRecoveryEntryRow[];
+}
+
+export interface Notification {
+  id: string;
+  type: "payment" | "deadline" | "status" | "overdue" | "hearing";
+  title: string;
+  description: string;
+  date: string;
+  read: boolean;
+  caseId: string;
+  priority: "low" | "medium" | "high" | "urgent";
+}
+
+export interface AuditEntry {
+  id: string;
+  timestamp: string;
+  userId: string;
+  userName: string;
+  userRole: string;
+  action: "view" | "edit" | "create" | "comment" | "payment" | "export";
+  entityType: "case" | "payment" | "comment" | "report";
+  entityId: string;
+  details: string;
+  caseNumber?: string;
+}
+
+
+export const courtInstanceLabels: Record<CourtInstance, string> = {
+  first: "Первая инстанция",
+  appeal: "Апелляция",
+  cassation: "Кассация",
+  supreme: "Верховный суд",
+};
+
+export const caseStatusLabels: Record<CaseStatus, string> = {
+  active: "В работе",
+  mediation: "Медиация",
+  suspended: "Приостановлено",
+  execution: "Исполнение",
+  closed: "Закрыто",
+};
+
+export const caseOutcomeLabels: Record<CaseOutcome, string> = {
+  fully_satisfied: "Иск удовлетворен",
+  partially_satisfied: "Частично удовлетворен",
+  denied: "В иске отказано",
+  settled: "Мировое соглашение",
+  dismissed: "Оставлено без рассмотрения",
+  pending: "Нет решения",
+};
+
+export const caseTypeLabels: Record<CaseType, string> = {
+  civil: "Гражданское",
+  administrative: "Административное",
+  criminal: "Уголовное",
+  executive: "Исполнительное",
+  labor: "Трудовое",
+  tax: "Налоговое",
+  corporate: "Корпоративное",
+  other: "Иное",
+};
+
+export const partyRoleLabels: Record<PartyRole, string> = {
+  plaintiff: "Истец",
+  defendant: "Ответчик",
+  third_party: "Третье лицо",
+};
+
+/** Подписи разделов ПИР для UI (Select/фильтры). Совпадают с заголовками шаблона КТЖ. */
+export const disputeCategoryLabels: Record<DisputeCategory, string> = {
+  procurement: "Иски о закупках/договорах",
+  transportation: "Перевозочный процесс",
+  labor: "Трудовые споры",
+  other: "Иные споры",
+  mediation: "Медиативные соглашения",
+};
+
+/** Полные подписи (как в шаблоне) — для отображения в карточке дела или подсказке. */
+export const disputeCategoryFullLabels: Record<DisputeCategory, string> = {
+  procurement: "Иски, связанные с нарушением законодательства о закупках и вытекающие из договоров",
+  transportation: "Иски, вытекающие из перевозочного процесса",
+  labor: "Трудовые споры",
+  other: "Иные споры",
+  mediation: "Медиативные соглашения",
+};
+
+/**
+ * Какие категории доступны для конкретной роли в шаблоне ПИР:
+ * на «истец» нет «перевозочные» — такие дела сваливаются в «Иные споры».
+ */
+export const allowedDisputeCategoriesForRole: Record<PartyRole, DisputeCategory[]> = {
+  plaintiff: ["procurement", "labor", "other", "mediation"],
+  defendant: ["procurement", "transportation", "labor", "other", "mediation"],
+  third_party: ["procurement", "labor", "other", "mediation"],
+};
+
+export const commentTypeLabels: Record<string, string> = {
+  question: "Вопрос",
+  clarify: "Уточнить",
+  problem: "Проблема",
+  info: "Информация",
+};
+
+export const branches = ["Центральный аппарат", "Северный", "Южный", "Западный", "Экспресс", "Центральный"];
+
+/**
+ * Не названия структурных подразделений (часто ошибочные строки из ПИР в колонке «филиал»).
+ * Такие значения не участвуют в аналитике по филиалам.
+ */
+export function isRealBranchNameForStats(name: string | null | undefined): boolean {
+  if (name == null) return false;
+  const raw = name.trim().normalize("NFKC").replace(/\s+/g, " ");
+  if (!raw) return false;
+  const s = raw.toLowerCase();
+  const exact = new Set([
+    "предъявлено",
+    "удовлетворено",
+    "отказано",
+    "заключено медиативное соглашение",
+    "частично удовлетворено",
+    "полностью удовлетворено",
+    "иск удовлетворен",
+    "в иске отказано",
+    "мировое соглашение",
+    "оставлено без рассмотрения",
+    "нет решения",
+  ]);
+  if (exact.has(s)) return false;
+  if (s === "нет" || s === "не указано" || s === "нет филиала") return false;
+  // только пробелы и знаки «тире» (Pd) — не филиал, даже если символ не совпал с литералом «—»
+  if (/^[\p{Pd}\p{Zs}]+$/u.test(raw)) return false;
+  if (s.includes("медиатив")) return false;
+  if (s.startsWith("удовлетворен") || s.startsWith("частично удовлетворен")) return false;
+  if (s.startsWith("предъявлен")) return false;
+  if (/^отказан/.test(s)) return false;
+  return true;
+}
+
+/** Уникальные названия филиалов из поля `branch` в делах (как приходит с API). */
+export const getBranchNamesFromCases = (cases: LegalCase[]): string[] => {
+  const set = new Set<string>();
+  for (const c of cases) {
+    const b = c.branch?.trim();
+    if (b && isRealBranchNameForStats(b)) set.add(b);
+  }
+  return Array.from(set).sort((a, b) => a.localeCompare(b, "ru"));
+};
+
+/** Справочник филиалов для аналитики: активные подразделения из БД + любые названия из дел (импорт ПИР и т.д.). */
+export const mergeBranchDirectory = (apiBranchNames: string[], cases: LegalCase[]): string[] => {
+  const set = new Set<string>();
+  for (const n of apiBranchNames) {
+    const t = n?.trim();
+    if (t && isRealBranchNameForStats(t)) set.add(t);
+  }
+  for (const c of cases) {
+    const b = c.branch?.trim();
+    if (b && isRealBranchNameForStats(b)) set.add(b);
+  }
+  return Array.from(set).sort((a, b) => a.localeCompare(b, "ru"));
+};
+
+/** Уникальные ФИО из поля «Ответственный» по загруженным делам (сортировка ru). */
+export const getLawyerNamesFromCases = (cases: LegalCase[]): string[] => {
+  const set = new Set<string>();
+  for (const c of cases) {
+    const n = c.assignedLawyer?.trim();
+    if (n) set.add(n);
+  }
+  return Array.from(set).sort((a, b) => a.localeCompare(b, "ru"));
+};
+export interface Counterparty {
+  bin: string;
+  name: string;
+  totalCases: number;
+  activeCases: number;
+  totalDebt: number;
+  totalPaid: number;
+  lastCaseDate: string;
+}
+
+export const getCounterparties = (cases: LegalCase[]): Counterparty[] => {
+  const map = new Map<string, Counterparty>();
+  cases.forEach(c => {
+    const existing = map.get(c.companyBIN);
+    if (existing) {
+      existing.totalCases++;
+      existing.activeCases += ["active", "mediation", "suspended", "execution"].includes(c.status) ? 1 : 0;
+      existing.totalDebt += c.mainDebt;
+      existing.totalPaid += c.paidAmount;
+      if (c.filingDate > existing.lastCaseDate) existing.lastCaseDate = c.filingDate;
+    } else {
+      map.set(c.companyBIN, {
+        bin: c.companyBIN,
+        name: c.company,
+        totalCases: 1,
+        activeCases: ["active", "mediation", "suspended", "execution"].includes(c.status) ? 1 : 0,
+        totalDebt: c.mainDebt,
+        totalPaid: c.paidAmount,
+        lastCaseDate: c.filingDate,
+      });
+    }
+  });
+  return Array.from(map.values()).sort((a, b) => b.totalDebt - a.totalDebt);
+};
+
+export const formatAmount = (amount: number): string => {
+  const n = Math.round(Number(amount));
+  return new Intl.NumberFormat("ru-KZ", { maximumFractionDigits: 0 }).format(n) + " ₸";
+};
+
+/** Краткий вид суммы (млн / тыс.). Учитывает отрицательные значения — иначе попадали в «хвост» toString() с float-шумом. */
+export const formatAmountShort = (amount: number): string => {
+  const sign = amount < 0 ? "−" : "";
+  const abs = Math.abs(Number(amount));
+  const trimDec = (s: string) => s.replace(/\.0$/, "");
+  if (abs >= 1_000_000_000) return `${sign}${trimDec((abs / 1_000_000_000).toFixed(1))} млрд ₸`;
+  if (abs >= 1_000_000) return `${sign}${trimDec((abs / 1_000_000).toFixed(1))} млн ₸`;
+  if (abs >= 1_000) return `${sign}${trimDec((abs / 1_000).toFixed(0))} тыс ₸`;
+  return `${sign}${Math.round(abs)} ₸`;
+};
+
+/**
+ * Статистика по юристам. Без `lawyerNames` — только те, кто встречается в `cases` (удобно для графиков с периодом).
+ * С `lawyerNames` — полный справочник (например, активные юристы из БД + любые ФИО из дел).
+ */
+export const getLawyerStats = (cases: LegalCase[], lawyerNames?: string[]) => {
+  const names =
+    lawyerNames && lawyerNames.length > 0
+      ? [...new Set(lawyerNames.map((n) => n.trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, "ru"))
+      : getLawyerNamesFromCases(cases);
+  return names
+    .map((lawyer) => {
+      const lawyerCases = cases.filter((c) => c.assignedLawyer === lawyer);
+      const won = lawyerCases.filter(
+        (c) => c.outcome === "fully_satisfied" || c.outcome === "partially_satisfied" || c.outcome === "settled",
+      ).length;
+      const lost = lawyerCases.filter((c) => c.outcome === "denied" || c.outcome === "dismissed").length;
+      const active = lawyerCases.filter((c) => ["active", "mediation", "suspended", "execution"].includes(c.status)).length;
+      const totalAmount = lawyerCases.reduce((s, c) => s + c.claimAmount, 0);
+      const avgDays =
+        lawyerCases.length > 0
+          ? Math.round(
+              lawyerCases.reduce((s, c) => {
+                const start = new Date(c.filingDate);
+                const end = new Date(c.lastUpdated);
+                return s + (end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24);
+              }, 0) / lawyerCases.length,
+            )
+          : 0;
+
+      return {
+        name: lawyer,
+        totalCases: lawyerCases.length,
+        won,
+        lost,
+        active,
+        totalAmount,
+        avgDays,
+        winRate: lawyerCases.length > 0 ? Math.round((won / Math.max(won + lost, 1)) * 100) : 0,
+      };
+    })
+    .sort((a, b) => b.winRate - a.winRate);
+};
+
+// Role system
+export type UserRole = "director" | "chief_lawyer" | "branch_lawyer" | "accountant";
+
+export interface User {
+  id: string;
+  name: string;
+  role: UserRole;
+  branch: string | null; // null for director (all branches)
+  email: string;
+  avatar?: string;
+}
+
+export const roleLabels: Record<string, string> = {
+  director: "Директор",
+  chief_lawyer: "Главный юрист",
+  branch_lawyer: "Юрист филиала",
+  accountant: "Бухгалтер",
+  system: "Система",
+};
+
+// Current user storage key (used by useCurrentUser + apiAuthHeaders)
+export const USER_STORAGE_KEY = "court_flow_current_user";
+
+// Permissions helper
+export const canViewAllCases = (user: User): boolean =>
+  user.role === "director" || user.role === "chief_lawyer" || user.role === "accountant" || user.branch === "Центральный аппарат";
+export const canViewAllBranches = (user: User): boolean => user.role === "director" || user.role === "chief_lawyer";
+export const canViewAllAnalytics = (user: User): boolean => user.role === "director" || user.role === "chief_lawyer";
+export const canViewAuditLog = (user: User): boolean => user.role === "director" || user.role === "chief_lawyer";
+export const canEditCase = (user: User, caseData: LegalCase): boolean => {
+  if (user.role === "director" || user.role === "chief_lawyer") return true;
+  if (user.role === "branch_lawyer") return caseData.branch === user.branch;
+  return false;
+};
+export const canAddPayment = (user: User): boolean => user.role === "director" || user.role === "accountant";
+export const canViewLawyerStats = (user: User): boolean => user.role === "director" || user.role === "chief_lawyer";
+export const canAddCase = (user: User): boolean => user.role === "branch_lawyer";
+export const canManageUsers = (user: User): boolean => user.role === "director" || user.role === "chief_lawyer";
+
+export const CASES_CHANGE_EVENT = "casechange";
+
+export const notifyCasesChanged = () => {
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent(CASES_CHANGE_EVENT));
+  }
+};
+
+/** @deprecated Cases are created via API; kept for compatibility with legacy callers. */
+export const addCase = (_c: LegalCase) => {
+  notifyCasesChanged();
+};
+
+// Filter cases based on user role (`cases` must come from API / useCases — no implicit mock fallback).
+export const getFilteredCasesForUser = (user: User, cases: LegalCase[]): LegalCase[] => {
+  if (canViewAllCases(user)) return cases;
+  if (user.role === "branch_lawyer" && user.branch) {
+    return cases.filter(c => c.branch === user.branch);
+  }
+  return [];
+};
+
