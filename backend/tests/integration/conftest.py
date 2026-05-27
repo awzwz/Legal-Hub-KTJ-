@@ -25,36 +25,58 @@ def pytest_collection_modifyitems(config, items):
             item.add_marker(skip_marker)
 
 
-@pytest_asyncio.fixture
-async def app_client():
-    """In-process ASGI client. Создаёт схему БД на старте."""
-    import httpx
-
+@pytest_asyncio.fixture(scope="session", loop_scope="session")
+async def _schema_once():
+    """Создаём схему один раз на сессию — иначе asyncpg pool привязывается к
+    разным event-loops между тестами."""
     from app.db.base import Base
     from app.db.session import engine
-    from app.main import app
 
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
         await conn.run_sync(Base.metadata.create_all)
+    yield
+    await engine.dispose()
+
+
+@pytest_asyncio.fixture(loop_scope="session")
+async def app_client(_schema_once):
+    """In-process ASGI client. Каждый тест получает чистую БД (truncate)."""
+    import httpx
+    from sqlalchemy import text
+
+    from app.db.session import SessionLocal
+    from app.main import app
+
+    # Очищаем таблицы перед каждым тестом, чтобы не было пересечений.
+    async with SessionLocal() as session:
+        result = await session.execute(
+            text(
+                "SELECT tablename FROM pg_tables WHERE schemaname='public' "
+                "AND tablename NOT LIKE 'alembic_%'"
+            )
+        )
+        tables = [r[0] for r in result.fetchall()]
+        if tables:
+            quoted = ", ".join(f'"{t}"' for t in tables)
+            await session.execute(text(f"TRUNCATE TABLE {quoted} RESTART IDENTITY CASCADE"))
+            await session.commit()
 
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
         yield client
 
 
-@pytest_asyncio.fixture
+@pytest_asyncio.fixture(loop_scope="session")
 async def seeded_user(app_client):
     """Создаёт юзера с известным паролем и возвращает email/password."""
-    from sqlalchemy.ext.asyncio import AsyncSession
-
     from app.core.security import hash_password
     from app.db.session import SessionLocal
     from app.models import User
 
     email = "branch1@test.kz"
     password = "Pass-w0rd!"
-    async with SessionLocal() as session:  # type: AsyncSession
+    async with SessionLocal() as session:
         u = User(
             email=email,
             password_hash=hash_password(password),
