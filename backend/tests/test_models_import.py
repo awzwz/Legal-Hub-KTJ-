@@ -62,5 +62,9 @@ def test_models_import_resolves_relationships():
 
     # Принудительно резолвим relationship-строки — SQLAlchemy упадёт здесь, если
     # после рефакторинга остались битые `relationship("Foo")`-ссылки.
-    Case.__mapper__.configure_mappers
-    User.__mapper__.relationships  # noqa: B018
+    from sqlalchemy.orm import configure_mappers
+
+    configure_mappers()
+    # Просто прикасаемся к relationship-collection, чтобы Mapper их разрешил.
+    _ = list(Case.__mapper__.relationships)
+    _ = list(User.__mapper__.relationships)

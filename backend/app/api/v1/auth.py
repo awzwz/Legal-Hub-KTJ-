@@ -3,14 +3,13 @@ from __future__ import annotations
 from datetime import timedelta
 from typing import Annotated, Optional
 
-from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, Response, status
+from fastapi import APIRouter, Cookie, Depends, HTTPException, Response, status
 from fastapi.responses import JSONResponse
 from jose import JWTError
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
-from app.core.rate_limit import limiter
 from app.core.security import (
     create_access_token,
     create_refresh_token,
@@ -29,9 +28,7 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 
 
 @router.post("/login", response_model=TokenResponse)
-@limiter.limit("10/minute")
 async def login(
-    request: Request,
     body: LoginRequest,
     response: Response,
     db: Annotated[AsyncSession, Depends(get_identity_db)],
@@ -69,9 +66,7 @@ async def login(
 
 
 @router.post("/refresh", response_model=TokenResponse)
-@limiter.limit("30/minute")
 async def refresh_token(
-    request: Request,
     response: Response,
     db: Annotated[AsyncSession, Depends(get_identity_db)],
     refresh_token: Annotated[Optional[str], Cookie()] = None,

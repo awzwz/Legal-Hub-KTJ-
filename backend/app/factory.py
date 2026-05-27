@@ -17,7 +17,6 @@ from fastapi.responses import JSONResponse
 
 from app.core.config import get_settings
 from app.core.observability import attach_observability
-from app.core.rate_limit import attach_rate_limiter
 from app.db.base import Base
 from app.db.session import SessionLocal, engine
 from app.domain.seed import run_seed_if_empty
@@ -116,7 +115,6 @@ def create_legalhub_app(
         description=description,
     )
     attach_observability(app, service_name=service_name)
-    attach_rate_limiter(app)
     attach_common_middleware_and_errors(app)
     app.include_router(v1_router, prefix="/api/v1")
     if include_internal_payments:

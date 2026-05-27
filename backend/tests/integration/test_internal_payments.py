@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import os
+
 import pytest
 
-
-HEADERS_OK = {"X-Internal-Key": "test-internal-key"}
+# Берём ключ из окружения (CI задаёт собственный); fallback на тестовый дефолт.
+HEADERS_OK = {"X-Internal-Key": os.environ.get("INTERNAL_API_KEY", "test-internal-key")}
 
 
 @pytest.mark.asyncio
