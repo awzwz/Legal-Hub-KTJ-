@@ -626,10 +626,6 @@ def _write_summary_block(
         ("отказано", counts["denied"], sum_denied, None),
     ]
     filed_row = header_row + 1  # «предъявлено» — база для расчёта процентов
-    # Адреса строк сводки для остаточной формулы «отказано»
-    sat_row = header_row + 2
-    med_row = header_row + 3
-    den_row = header_row + 4
     for i, (label, count, total, formula) in enumerate(rows_data, start=1):
         r = header_row + i
         # B: название

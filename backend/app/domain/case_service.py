@@ -455,7 +455,7 @@ async def patch_case(db: AsyncSession, user: User, case_id: UUID, body: PatchCas
                     db,
                     old_lawyer_id_for_notify,
                     title=f"Вы сняты с дела {case_label}",
-                    body=f"Дело передано другому юристу.",
+                    body="Дело передано другому юристу.",
                     type="case_assigned",
                     priority="low",
                     case_id=row.id,
