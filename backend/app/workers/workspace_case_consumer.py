@@ -1,97 +1,89 @@
-"""Читает Redis Stream с событиями дел и создаёт уведомления (workspace)."""
+"""Workspace-консумер: материализует уведомления из событий.
+
+Подписывается на streams ``legalhub:case_events`` и ``legalhub:notification_requests``.
+На каждое событие:
+  - NotificationRequested       — материализует Notification, применяя preferences
+                                  и dedup, как раньше делал inline create_inline_notification;
+  - CaseAssigned                — пока no-op (отдельное уведомление шлётся через
+                                  параллельный NotificationRequested); зарезервирован
+                                  для будущих rollup-метрик / push-каналов;
+  - CaseCreated / CaseUpdated   — no-op в новой схеме (всё нужное теперь идёт
+                                  через NotificationRequested от case_service).
+"""
 
 from __future__ import annotations
 
-import asyncio
-import json
 import logging
-from datetime import datetime, timezone
-from uuid import UUID
 
+from app.contracts.events import (
+    CaseAssigned,
+    CaseCreated,
+    CaseUpdated,
+    NotificationRequested,
+)
 from app.db.session import SessionLocal
-from app.models import Notification
-from app.domain.redis_client import get_redis
-from app.workers.outbox_dispatcher import STREAM_KEY
+from app.domain.notifications.triggers import create_inline_notification
+from app.infra.event_bus import Consumer
 
 _log = logging.getLogger(__name__)
-_task: asyncio.Task | None = None
-GROUP = "workspace"
-CONSUMER = "w1"
+_consumer: Consumer | None = None
 
 
-async def _consume_loop() -> None:
-    while True:
-        try:
-            r = await get_redis()
-            if r is None:
-                await asyncio.sleep(3)
-                continue
-            try:
-                await r.xgroup_create(STREAM_KEY, GROUP, id="0", mkstream=True)
-            except Exception:
-                pass
-            resp = await r.xreadgroup(GROUP, CONSUMER, streams={STREAM_KEY: ">"}, count=20, block=5000)
-            if not resp:
-                continue
-            for _stream_name, messages in resp:
-                for msg_id, data in messages:
-                    await _handle_message(data)
-                    await r.xack(STREAM_KEY, GROUP, msg_id)
-        except asyncio.CancelledError:
-            raise
-        except Exception:
-            _log.exception("workspace_case_consumer tick")
-            await asyncio.sleep(1)
-
-
-async def _handle_message(data: dict) -> None:
-    et = data.get("event_type")
-    raw = data.get("payload")
-    if not raw or et not in ("CaseUpdated", "CaseCreated"):
-        return
-    try:
-        payload = json.loads(raw)
-    except json.JSONDecodeError:
-        return
-    case_id = payload.get("caseId")
-    status = payload.get("status")
-    prev = payload.get("previousStatus")
-    lawyer_id = payload.get("assignedLawyerId")
-    if not case_id or not lawyer_id:
-        return
-    if et == "CaseUpdated" and prev == status:
-        return
-    title = "Обновление дела" if et == "CaseUpdated" else "Новое дело"
-    body = f"Статус: {status}" if status else "Дело в реестре"
+# ───────────────────────────── handlers ─────────────────────────────
+async def _on_notification_requested(event: NotificationRequested) -> None:
     async with SessionLocal() as db:
-        db.add(
-            Notification(
-                user_id=UUID(lawyer_id),
-                title=title,
-                body=body,
-                type="info",
-                priority="medium",
-                read_at=None,
-                case_id=UUID(case_id),
-                created_at=datetime.now(timezone.utc),
+        try:
+            await create_inline_notification(
+                db,
+                event.user_id,
+                title=event.title,
+                body=event.body,
+                type=event.notification_type,
+                priority=event.priority,
+                case_id=event.case_id,
+                dedup_key=event.dedup_key,
             )
-        )
-        await db.commit()
+            await db.commit()
+        except Exception:
+            await db.rollback()
+            raise
+
+
+async def _on_case_assigned(event: CaseAssigned) -> None:
+    _log.debug("CaseAssigned %s lawyer=%s", event.case_id, event.assigned_lawyer_id)
+
+
+async def _on_case_created(_: CaseCreated) -> None:
+    return None
+
+
+async def _on_case_updated(_: CaseUpdated) -> None:
+    return None
+
+
+# ───────────────────────────── lifecycle ─────────────────────────────
+def _build_consumer() -> Consumer:
+    c = Consumer(
+        group="workspace",
+        consumer="w1",
+        streams=["legalhub:case_events", "legalhub:notification_requests"],
+    )
+    c.on("NotificationRequested", _on_notification_requested)
+    c.on("CaseAssigned", _on_case_assigned)
+    c.on("CaseCreated", _on_case_created)
+    c.on("CaseUpdated", _on_case_updated)
+    return c
 
 
 async def start_workspace_case_consumer() -> None:
-    global _task
-    if _task is not None and not _task.done():
-        return
-    _task = asyncio.create_task(_consume_loop(), name="workspace_case_consumer")
+    global _consumer
+    if _consumer is None:
+        _consumer = _build_consumer()
+    await _consumer.start()
 
 
 async def stop_workspace_case_consumer() -> None:
-    global _task
-    if _task is not None:
-        _task.cancel()
-        try:
-            await _task
-        except asyncio.CancelledError:
-            pass
-        _task = None
+    global _consumer
+    if _consumer is not None:
+        await _consumer.stop()
+        _consumer = None

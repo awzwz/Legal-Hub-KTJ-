@@ -44,7 +44,8 @@ from app.schemas.legal_case import (
 from app.domain.audit_write import write_audit_log
 from app.domain.case_mapper import case_to_legal_case_out
 from app.domain.demo_seed import parse_ui_datetime
-from app.domain.outbox_service import enqueue_outbox
+from app.contracts.events import CaseAssigned, CaseCreated, CaseUpdated, NotificationRequested
+from app.domain.outbox_service import enqueue_outbox_event
 
 
 def _audit_snap(v: object, mx: int = 180) -> str:
@@ -211,16 +212,15 @@ async def create_case(db: AsyncSession, user: User, body: CreateLegalCaseBody) -
         entity_id=str(case_id),
         details=f"Создано дело {body.case_number}",
     )
-    await enqueue_outbox(
+    await enqueue_outbox_event(
         db,
-        "CaseCreated",
-        {
-            "caseId": str(case_id),
-            "status": c.status,
-            "previousStatus": None,
-            "branchId": str(c.branch_id),
-            "assignedLawyerId": str(c.assigned_lawyer_id) if c.assigned_lawyer_id else None,
-        },
+        CaseCreated(
+            case_id=case_id,
+            case_number=c.case_number,
+            status=c.status,
+            branch_id=c.branch_id,
+            assigned_lawyer_id=c.assigned_lawyer_id,
+        ),
     )
     await db.commit()
     out = await get_case(db, user, case_id)
@@ -421,48 +421,66 @@ async def patch_case(db: AsyncSession, user: User, case_id: UUID, body: PatchCas
             details=f"{row.case_number}: {detail}",
             endpoint="PATCH /cases/{id}",
         )
-        await enqueue_outbox(
+        await enqueue_outbox_event(
             db,
-            "CaseUpdated",
-            {
-                "caseId": str(row.id),
-                "status": row.status,
-                "previousStatus": old_status,
-                "branchId": str(row.branch_id),
-                "assignedLawyerId": str(row.assigned_lawyer_id) if row.assigned_lawyer_id else None,
-            },
+            CaseUpdated(
+                case_id=row.id,
+                status=row.status,
+                previous_status=old_status,
+                branch_id=row.branch_id,
+                assigned_lawyer_id=row.assigned_lawyer_id,
+                previous_lawyer_id=old_lawyer_id_for_notify,
+                outcome=row.outcome,
+                previous_outcome=old_outcome,
+            ),
         )
 
-        # Триггеры уведомлений (inline, без cron'а).
-        # Импорт здесь, чтобы избежать циклической зависимости.
-        from app.domain.notification_service import create_inline_notification
-
+        # Триггеры уведомлений теперь публикуются как события — workspace-consumer
+        # применит preferences и дедупликацию и материализует Notification.
         case_label = row.case_number or str(row.id)[:8]
-        # 1) Назначен новый юрист — уведомить нового и снять со старого.
+
+        # 1) Назначен новый юрист.
         if new_lawyer_id_for_notify is not None:
-            await create_inline_notification(
+            await enqueue_outbox_event(
                 db,
-                new_lawyer_id_for_notify,
-                title=f"Вам назначено дело {case_label}",
-                body=f"Контрагент: {row.company}. Истец/ответчик: {row.plaintiff} / {row.defendant}.",
-                type="case_assigned",
-                priority="medium",
-                case_id=row.id,
-                dedup_key=f"case_assigned:{row.id}:{new_lawyer_id_for_notify}",
+                CaseAssigned(
+                    case_id=row.id,
+                    case_label=case_label,
+                    branch_id=row.branch_id,
+                    assigned_lawyer_id=new_lawyer_id_for_notify,
+                    previous_lawyer_id=old_lawyer_id_for_notify,
+                ),
+            )
+            await enqueue_outbox_event(
+                db,
+                NotificationRequested(
+                    user_id=new_lawyer_id_for_notify,
+                    title=f"Вам назначено дело {case_label}",
+                    body=f"Контрагент: {row.company}. Истец/ответчик: {row.plaintiff} / {row.defendant}.",
+                    notification_type="case_assigned",
+                    priority="medium",
+                    case_id=row.id,
+                    dedup_key=f"case_assigned:{row.id}:{new_lawyer_id_for_notify}",
+                ),
             )
             if old_lawyer_id_for_notify is not None:
-                await create_inline_notification(
+                await enqueue_outbox_event(
                     db,
-                    old_lawyer_id_for_notify,
-                    title=f"Вы сняты с дела {case_label}",
-                    body="Дело передано другому юристу.",
-                    type="case_assigned",
-                    priority="low",
-                    case_id=row.id,
-                    dedup_key=f"case_unassigned:{row.id}:{old_lawyer_id_for_notify}",
+                    NotificationRequested(
+                        user_id=old_lawyer_id_for_notify,
+                        title=f"Вы сняты с дела {case_label}",
+                        body="Дело передано другому юристу.",
+                        notification_type="case_assigned",
+                        priority="low",
+                        case_id=row.id,
+                        dedup_key=f"case_unassigned:{row.id}:{old_lawyer_id_for_notify}",
+                    ),
                 )
 
-        # 2) Сменился исход — уведомить chief/director.
+        # 2) Сменился исход — уведомить chief/director через события.
+        # Список адресатов всё ещё формируется здесь (legal знает про IAM-таблицу
+        # в монолите). При физическом разделении БД эта выборка переедет в IAM,
+        # а здесь будет publish одного CaseOutcomeChanged.
         if body.outcome is not None and body.outcome != old_outcome:
             chief_res = await db.execute(
                 select(User.id).where(
@@ -471,15 +489,17 @@ async def patch_case(db: AsyncSession, user: User, case_id: UUID, body: PatchCas
                 )
             )
             for (chief_uid,) in chief_res.all():
-                await create_inline_notification(
+                await enqueue_outbox_event(
                     db,
-                    chief_uid,
-                    title=f"Изменился исход дела {case_label}",
-                    body=f"{old_outcome or '—'} → {body.outcome}. Юрист: {user.full_name}.",
-                    type="case_status_changed",
-                    priority="low",
-                    case_id=row.id,
-                    dedup_key=f"case_status_changed:{row.id}:{old_outcome}:{body.outcome}",
+                    NotificationRequested(
+                        user_id=chief_uid,
+                        title=f"Изменился исход дела {case_label}",
+                        body=f"{old_outcome or '—'} → {body.outcome}. Юрист: {user.full_name}.",
+                        notification_type="case_status_changed",
+                        priority="low",
+                        case_id=row.id,
+                        dedup_key=f"case_status_changed:{row.id}:{old_outcome}:{body.outcome}",
+                    ),
                 )
 
     await db.commit()

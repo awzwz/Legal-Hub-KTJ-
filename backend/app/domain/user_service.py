@@ -8,7 +8,9 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
 
+from app.contracts.events import UserCreated, UserDeactivated, UserUpdated
 from app.core.security import hash_password, verify_password
+from app.domain.outbox_service import enqueue_outbox_event
 from app.models import Branch, User
 
 
@@ -104,6 +106,16 @@ async def create_user(
         is_active=True,
     )
     db.add(new_user)
+    await enqueue_outbox_event(
+        db,
+        UserCreated(
+            user_id=new_user.id,
+            email=new_user.email,
+            full_name=new_user.full_name,
+            role=new_user.role,
+            branch_id=new_user.branch_id,
+        ),
+    )
     await db.commit()
     await db.refresh(new_user, attribute_names=["branch"])
     return _user_to_dict(new_user)
@@ -118,6 +130,13 @@ async def set_user_active(db: AsyncSession, actor: User, user_id: UUID, *, is_ac
     if row.id == actor.id and not is_active:
         raise HTTPException(status_code=400, detail="Нельзя деактивировать самого себя")
     row.is_active = is_active
+    if is_active:
+        await enqueue_outbox_event(
+            db,
+            UserUpdated(user_id=row.id, is_active=True, role=row.role, branch_id=row.branch_id),
+        )
+    else:
+        await enqueue_outbox_event(db, UserDeactivated(user_id=row.id))
     await db.commit()
     return _user_to_dict(row)
 
