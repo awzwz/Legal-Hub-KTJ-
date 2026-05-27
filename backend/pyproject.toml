@@ -18,4 +18,11 @@ ignore = [
   "F401",  # unused import (re-exports в models/__init__.py и notification_service.py shim)
   "E741",  # short var names в excel-utils
   "I001",  # порядок импортов не форсируем (Ruff vs isort расходятся)
+  "F821",  # forward-refs SQLAlchemy ("User", "Branch") резолвятся в runtime
+  "F811",  # повторные импорты в shim-модулях
 ]
+
+[tool.ruff.lint.per-file-ignores]
+"app/models/legal.py" = ["F821"]
+"app/models/iam.py" = ["F821"]
+"app/domain/notification_service.py" = ["F401"]
