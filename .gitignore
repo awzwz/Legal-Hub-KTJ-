@@ -40,3 +40,17 @@ deploy/aws/.env.*.local
 
 # Локальные venv вне backend/.venv
 .venv-pir/
+
+# PII / реестры с персональными данными контрагентов — никогда не коммитим.
+# Образцы для тестов — только в backend/demo/ и обезличенные.
+/*.xlsx
+/BIN_IIN_*.xlsx
+/Отчет*.xlsx
+/реестр*.xlsx
+/Юристы*.xlsx
+# Большие PIR-источники (3.9MB) — реальные BIN/ИИН/имена. Только в backend/templates/
+# допустимы обезличенные шаблоны до 100KB.
+backend/data/pir_*.xlsx
+backend/templates/pir_*_data*.xlsx
+backend/templates/*.OLD-BACKUP.xlsx
+backend/templates/pir_source_*.xlsx

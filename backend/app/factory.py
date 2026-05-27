@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
+import logging
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Any, Callable, Optional
+
+logger = logging.getLogger(__name__)
 
 import app.models  # noqa: F401 — register ORM mappers
 from fastapi import APIRouter, FastAPI, HTTPException, Request
@@ -13,9 +17,10 @@ from fastapi.responses import JSONResponse
 
 from app.core.config import get_settings
 from app.core.observability import attach_observability
+from app.core.rate_limit import attach_rate_limiter
 from app.db.base import Base
 from app.db.session import SessionLocal, engine
-from app.services.seed import run_seed_if_empty
+from app.domain.seed import run_seed_if_empty
 
 
 @asynccontextmanager
@@ -33,6 +38,8 @@ def create_lifespan(
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         settings = get_settings()
+        if settings.relax_auth:
+            logger.warning("RELAX_AUTH=true: endpoints accept X-Dev-User-Email without JWT. Do NOT use in production.")
         if bootstrap_iam_tables and (settings.iam_database_url or "").strip():
             from app.db.iam_session import create_iam_tables_if_needed
 
@@ -43,7 +50,7 @@ def create_lifespan(
         if enable_demo_seed:
             if iam_identity_seed_only and (settings.iam_database_url or "").strip():
                 from app.db.iam_session import _ensure_iam_engine
-                from app.services.iam_seed import run_iam_identity_seed_if_empty
+                from app.domain.iam_seed import run_iam_identity_seed_if_empty
 
                 _, factory = _ensure_iam_engine()
                 async with factory() as session:
@@ -109,6 +116,7 @@ def create_legalhub_app(
         description=description,
     )
     attach_observability(app, service_name=service_name)
+    attach_rate_limiter(app)
     attach_common_middleware_and_errors(app)
     app.include_router(v1_router, prefix="/api/v1")
     if include_internal_payments:

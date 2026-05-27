@@ -10,7 +10,7 @@ from sqlalchemy import select
 
 from app.db.session import SessionLocal
 from app.models import OutboxEvent
-from app.services.redis_client import get_redis
+from app.domain.redis_client import get_redis
 
 STREAM_KEY = "legalhub:case_events"
 _log = logging.getLogger(__name__)

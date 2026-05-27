@@ -10,10 +10,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "contracts" / "openapi"
 APPS = [
-    ("iam", "app.svc.iam"),
-    ("legal", "app.svc.legal"),
-    ("workspace", "app.svc.workspace"),
-    ("reporting", "app.svc.reporting"),
+    ("iam", "app.entrypoints.iam"),
+    ("legal", "app.entrypoints.legal"),
+    ("workspace", "app.entrypoints.workspace"),
+    ("reporting", "app.entrypoints.reporting"),
     ("monolith", "app.main"),
 ]
 

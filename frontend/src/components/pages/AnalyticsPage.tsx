@@ -1,4 +1,3 @@
-import { ResponsiveContainer, PieChart, Pie, Cell, Legend, Tooltip } from "recharts";
 import { useMemo } from "react";
 import { formatAmountShort, getLawyerStats, caseTypeLabels, mergeBranchDirectory, getBranchNamesFromCases, getFilteredCasesForUser, canViewAllBranches, isRealBranchNameForStats } from "@/data/mockData";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
@@ -8,16 +7,11 @@ import { useBranchesNames } from "@/hooks/useBranchesNames";
 import { motion } from "framer-motion";
 import { Eye } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { DonutWithLegend } from "@/components/ui/donut-with-legend";
 
 function pctLinear(value: number, max: number): number {
   if (max <= 0 || value <= 0) return 0;
   return Math.min(100, (value / max) * 100);
-}
-
-/** Полоска длиннее при малых суммах относительно максимума (корень сжимает выбросы). */
-function pctSqrt(value: number, max: number): number {
-  if (max <= 0 || value <= 0) return 0;
-  return Math.min(100, (Math.sqrt(value) / Math.sqrt(max)) * 100);
 }
 
 function MetricBar({
@@ -26,16 +20,14 @@ function MetricBar({
   max,
   className,
   format,
-  scale = "linear",
 }: {
   label: string;
   value: number;
   max: number;
   className: string;
   format?: (n: number) => string;
-  scale?: "linear" | "sqrt";
 }) {
-  const pct = scale === "sqrt" ? pctSqrt(value, max) : pctLinear(value, max);
+  const pct = pctLinear(value, max);
   const shown = format ? format(value) : String(value);
   return (
     <div className="space-y-1">
@@ -88,49 +80,31 @@ const AnalyticsPage = () => {
       .sort((a, b) => b.total - a.total);
   }, [chartBranches, userCases]);
 
-  const branchFinRows = useMemo(() => {
-    return chartBranches
-      .map((b) => {
-        const cases = userCases.filter((c) => c.branch === b);
-        const debt = cases.reduce((s, c) => s + c.mainDebt, 0);
-        const paid = cases.reduce((s, c) => s + c.paidAmount, 0);
-        return {
-          branchFull: b,
-          debt,
-          paid,
-          finTotal: debt + paid,
-        };
-      })
-      .sort((a, b) => b.finTotal - a.finTotal);
-  }, [chartBranches, userCases]);
-
   const maxWon = Math.max(1, ...branchCasesRows.map((r) => r.won));
   const maxLost = Math.max(1, ...branchCasesRows.map((r) => r.lost));
   const maxActive = Math.max(1, ...branchCasesRows.map((r) => r.active));
 
-  const maxDebt = Math.max(1, ...branchFinRows.map((r) => r.debt));
-  const maxPaid = Math.max(1, ...branchFinRows.map((r) => r.paid));
-
   // Cases by type
+  const typeColors = ["hsl(38, 92%, 50%)", "hsl(200, 60%, 50%)", "hsl(0, 72%, 51%)", "hsl(25, 30%, 40%)", "hsl(280, 45%, 52%)", "hsl(142, 71%, 45%)", "hsl(220, 14%, 52%)", "hsl(180, 60%, 45%)"];
   const typeData = Object.entries(
     userCases.reduce((acc, c) => {
       acc[c.caseType] = (acc[c.caseType] || 0) + 1;
       return acc;
     }, {} as Record<string, number>)
-  ).map(([type, count]) => ({
-    name: caseTypeLabels[type as keyof typeof caseTypeLabels],
+  ).map(([type, count], i) => ({
+    key: type,
+    name: caseTypeLabels[type as keyof typeof caseTypeLabels] || type,
     value: count,
+    color: typeColors[i % typeColors.length],
   }));
 
-  const typeColors = ["hsl(38, 92%, 50%)", "hsl(200, 60%, 50%)", "hsl(0, 72%, 51%)", "hsl(25, 30%, 40%)"];
-
   // Party role distribution
-  const roleData = [
-    { name: "Истец", value: userCases.filter(c => c.partyRole === "plaintiff").length },
-    { name: "Ответчик", value: userCases.filter(c => c.partyRole === "defendant").length },
-    { name: "Третье лицо", value: userCases.filter(c => c.partyRole === "third_party").length },
-  ];
   const roleColors = ["hsl(142, 71%, 45%)", "hsl(0, 72%, 51%)", "hsl(38, 92%, 50%)"];
+  const roleData = [
+    { key: "plaintiff", name: "Истец", value: userCases.filter(c => c.partyRole === "plaintiff").length, color: roleColors[0] },
+    { key: "defendant", name: "Ответчик", value: userCases.filter(c => c.partyRole === "defendant").length, color: roleColors[1] },
+    { key: "third_party", name: "Третье лицо", value: userCases.filter(c => c.partyRole === "third_party").length, color: roleColors[2] },
+  ];
 
   const lawyerStats = canViewAll ? getLawyerStats(userCases, lawyerDirectory) : [];
 
@@ -148,45 +122,25 @@ const AnalyticsPage = () => {
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }} className="stat-card">
-          <h3 className="text-sm font-semibold mb-4">Распределение по типам дел</h3>
-          <div className="h-[250px]">
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie data={typeData} cx="50%" cy="50%" innerRadius={50} outerRadius={85} paddingAngle={4} dataKey="value" strokeWidth={0}>
-                  {typeData.map((_, i) => <Cell key={i} fill={typeColors[i % typeColors.length]} />)}
-                </Pie>
-                <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8 }} />
-                <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 12 }} />
-              </PieChart>
-            </ResponsiveContainer>
-          </div>
+          <h3 className="text-sm font-semibold mb-3">Распределение по типам дел</h3>
+          <DonutWithLegend data={typeData} centerLabel="всего дел" />
         </motion.div>
 
         <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} className="stat-card">
-          <h3 className="text-sm font-semibold mb-4">Роль в суде</h3>
-          <div className="h-[250px]">
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie data={roleData} cx="50%" cy="50%" innerRadius={50} outerRadius={85} paddingAngle={4} dataKey="value" strokeWidth={0}>
-                  {roleData.map((_, i) => <Cell key={i} fill={roleColors[i]} />)}
-                </Pie>
-                <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8 }} />
-                <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 12 }} />
-              </PieChart>
-            </ResponsiveContainer>
-          </div>
+          <h3 className="text-sm font-semibold mb-3">Роль в суде</h3>
+          <DonutWithLegend data={roleData} centerLabel="всего дел" />
         </motion.div>
 
         <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 }} className="stat-card lg:col-span-2">
-          <h3 className="text-sm font-semibold text-slate-900">Дела по филиалам (выиграно / проиграно / в работе)</h3>
+          <h3 className="text-sm font-semibold text-slate-900">Дела по филиалам (удовлетворено / отказано / в работе)</h3>
           <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-600 mt-2 mb-4">
             <span className="inline-flex items-center gap-1.5">
               <span className="h-2 w-2 shrink-0 rounded-full bg-[hsl(142,71%,45%)]" />
-              Выиграно
+              Удовлетворено
             </span>
             <span className="inline-flex items-center gap-1.5">
               <span className="h-2 w-2 shrink-0 rounded-full bg-[hsl(0,72%,51%)]" />
-              Проиграно
+              Отказано
             </span>
             <span className="inline-flex items-center gap-1.5">
               <span className="h-2 w-2 shrink-0 rounded-full bg-[hsl(38,92%,50%)]" />
@@ -205,42 +159,9 @@ const AnalyticsPage = () => {
                   <p className="text-sm font-semibold leading-snug text-slate-900 break-words">{r.branchFull}</p>
                   <p className="mt-1 text-xs text-muted-foreground tabular-nums">Всего дел: {r.total}</p>
                   <div className="mt-4 grid gap-3 sm:grid-cols-3">
-                    <MetricBar label="Выиграно" value={r.won} max={maxWon} className="bg-[hsl(142,71%,45%)]" />
-                    <MetricBar label="Проиграно" value={r.lost} max={maxLost} className="bg-[hsl(0,72%,51%)]" />
+                    <MetricBar label="Удовлетворено" value={r.won} max={maxWon} className="bg-[hsl(142,71%,45%)]" />
+                    <MetricBar label="Отказано" value={r.lost} max={maxLost} className="bg-[hsl(0,72%,51%)]" />
                     <MetricBar label="В работе" value={r.active} max={maxActive} className="bg-[hsl(38,92%,50%)]" />
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </motion.div>
-
-        <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }} className="stat-card lg:col-span-2">
-          <h3 className="text-sm font-semibold text-slate-900">Долг vs Оплачено по филиалам</h3>
-          <p className="text-xs text-muted-foreground mt-1 mb-3">Полоски по шкале √ суммы; суммы справа — фактические.</p>
-          <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-600 mb-4">
-            <span className="inline-flex items-center gap-1.5">
-              <span className="h-2 w-2 shrink-0 rounded-full bg-[hsl(0,72%,51%)]" />
-              Долг
-            </span>
-            <span className="inline-flex items-center gap-1.5">
-              <span className="h-2 w-2 shrink-0 rounded-full bg-[hsl(142,71%,45%)]" />
-              Оплачено
-            </span>
-          </div>
-          {branchFinRows.length === 0 ? (
-            <p className="py-10 text-center text-sm text-muted-foreground">Нет данных по филиалам</p>
-          ) : (
-            <div className="max-h-[min(70vh,720px)] overflow-y-auto overscroll-contain space-y-3 pr-2">
-              {branchFinRows.map((r) => (
-                <div
-                  key={r.branchFull}
-                  className="rounded-xl border border-slate-200/90 bg-gradient-to-b from-white to-slate-50/80 p-4 shadow-sm"
-                >
-                  <p className="text-sm font-semibold leading-snug text-slate-900 break-words">{r.branchFull}</p>
-                  <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                    <MetricBar label="Долг" value={r.debt} max={maxDebt} className="bg-[hsl(0,72%,51%)]" format={formatAmountShort} scale="sqrt" />
-                    <MetricBar label="Оплачено" value={r.paid} max={maxPaid} className="bg-[hsl(142,71%,45%)]" format={formatAmountShort} scale="sqrt" />
                   </div>
                 </div>
               ))}
@@ -259,10 +180,10 @@ const AnalyticsPage = () => {
                 <th className="table-header text-left px-4 py-3">#</th>
                 <th className="table-header text-left px-4 py-3">Юрист</th>
                 <th className="table-header text-center px-4 py-3">Всего дел</th>
-                <th className="table-header text-center px-4 py-3">Выиграно</th>
-                <th className="table-header text-center px-4 py-3">Проиграно</th>
+                <th className="table-header text-center px-4 py-3">Удовлетворено</th>
+                <th className="table-header text-center px-4 py-3">Отказано</th>
                 <th className="table-header text-center px-4 py-3">В работе</th>
-                <th className="table-header text-center px-4 py-3">% побед</th>
+                <th className="table-header text-center px-4 py-3">% удовлетворения</th>
                 <th className="table-header text-center px-4 py-3">Ср. дней</th>
                 <th className="table-header text-right px-4 py-3">Общая сумма</th>
               </tr>

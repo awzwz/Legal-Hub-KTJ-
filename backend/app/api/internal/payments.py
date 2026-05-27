@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import secrets as _secrets
+from datetime import datetime
+from decimal import Decimal
 from typing import Annotated, Optional
 
 from fastapi import APIRouter, Depends, Header, HTTPException
@@ -8,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.db.session import get_db
-from app.services.payment_sync import sync_payment_from_1c
+from app.domain.payment_sync import sync_payment_from_1c
 
 
 class InternalPaymentBody(BaseModel):
@@ -24,7 +27,7 @@ class InternalPaymentBody(BaseModel):
 
 def require_internal_key(x_internal_key: Annotated[Optional[str], Header(alias="X-Internal-Key")] = None):
     expected = get_settings().internal_api_key
-    if not x_internal_key or x_internal_key != expected:
+    if not x_internal_key or not _secrets.compare_digest(x_internal_key, expected):
         raise HTTPException(status_code=401, detail="Invalid or missing X-Internal-Key")
 
 
@@ -37,12 +40,8 @@ async def sync_payment(
     db: Annotated[AsyncSession, Depends(get_db)],
     _: Annotated[None, Depends(require_internal_key)],
 ):
-    from datetime import datetime
-    from decimal import Decimal
-
     try:
-        raw = body.payment_date.replace("Z", "+00:00")
-        dt = datetime.fromisoformat(raw)
+        dt = datetime.fromisoformat(body.payment_date.replace("Z", "+00:00"))
     except ValueError:
         raise HTTPException(400, detail="Invalid payment_date")
 
@@ -57,6 +56,8 @@ async def sync_payment(
     )
     if not ok:
         raise HTTPException(404, detail=msg or "sync_failed")
-    if msg == "duplicate_ignored":
-        return {"synced": True, "duplicate": True, "case_id": str(case_id) if case_id else None}
-    return {"synced": True, "duplicate": False, "case_id": str(case_id) if case_id else None}
+    return {
+        "synced": True,
+        "duplicate": msg == "duplicate_ignored",
+        "case_id": str(case_id) if case_id else None,
+    }

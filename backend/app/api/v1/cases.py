@@ -25,7 +25,7 @@ from app.schemas.legal_case import (
     LegalCaseOut,
     PatchCaseBody,
 )
-from app.services import case_extension_service, case_service
+from app.domain import case_extension_service, case_service
 
 router = APIRouter(prefix="/cases", tags=["cases"])
 

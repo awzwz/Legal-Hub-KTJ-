@@ -22,9 +22,9 @@ docker compose up -d --build
   - `svc-iam` (auth, users) — http://127.0.0.1:8001/docs
   - `svc-workspace` (notifications, audit) — http://127.0.0.1:8003/docs
   - `svc-reporting` (reports, ПИР Excel) — http://127.0.0.1:8004/docs
-- Код: общая фабрика `app/factory.py`, точки входа `app/svc/*.py`; **монолит** для локальной разработки остаётся `app.main:app` (один процесс, все маршруты).
+- Код: общая фабрика `app/factory.py`, точки входа `app/entrypoints/*.py`; **монолит** для локальной разработки остаётся `app.main:app` (один процесс, все маршруты).
 
-Vite в этом сценарии **не нужен**; для HMR: `cd ../frontend && npm run dev` (по умолчанию прокси на монолит `:8000`; при необходимости — `VITE_API_MICRO=true` и четыре процесса `uvicorn app.svc.*`).
+Vite в этом сценарии **не нужен**; для HMR: `cd ../frontend && npm run dev` (по умолчанию прокси на монолит `:8000`; при необходимости — `VITE_API_MICRO=true` и четыре процесса `uvicorn app.entrypoints.*`).
 
 ---
 

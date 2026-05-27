@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { LayoutDashboard, Briefcase, FileText, Users, BarChart3, Settings, Bell, ChevronLeft, ChevronRight, Scale, Shield, User, ChevronDown } from "lucide-react";
+import { LayoutDashboard, Briefcase, FileText, Users, BarChart3, Settings, Bell, ChevronLeft, ChevronRight, Scale, Shield, User, ChevronDown, ClipboardList } from "lucide-react";
 import { roleLabels, canViewAuditLog, canViewAllAnalytics } from "@/data/mockData";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import type { User as UserType } from "@/data/mockData";
@@ -19,6 +19,7 @@ const getNavItems = (user: UserType, notifUnread: number): NavItem[] => {
   const items: NavItem[] = [
     { icon: LayoutDashboard, label: "Дашборд", id: "dashboard" },
     { icon: Briefcase, label: "Реестр дел", id: "cases" },
+    // { icon: ClipboardList, label: "Претензии", id: "claims" },  // временно скрыто
     { icon: Users, label: "Контрагенты", id: "counterparties" },
   ];
 
@@ -72,7 +73,8 @@ const AppSidebar = ({ activeSection, onSectionChange, onUserChange }: AppSidebar
 
   return (
     <aside className={cn(
-      "flex flex-col bg-[hsl(215,35%,15%)] text-white transition-all duration-300 min-h-screen flex-shrink-0 border-r border-[hsl(215,35%,20%)]",
+      "flex flex-col bg-[hsl(215,35%,15%)] text-white transition-all duration-300 flex-shrink-0 border-r border-[hsl(215,35%,20%)]",
+      "sticky top-0 h-screen",
       collapsed ? "w-16" : "w-64"
     )}>
       {/* Logo */}
@@ -97,8 +99,8 @@ const AppSidebar = ({ activeSection, onSectionChange, onUserChange }: AppSidebar
   )}
 </div>
 
-      {/* Nav */}
-      <nav className="flex-1 py-4 space-y-1 px-3">
+      {/* Nav — компактный блок сверху */}
+      <nav className="py-4 space-y-1 px-3">
         {navItems.map((item) => (
           <button
             key={item.id}
@@ -129,7 +131,10 @@ const AppSidebar = ({ activeSection, onSectionChange, onUserChange }: AppSidebar
         ))}
       </nav>
 
-      {/* User Selector */}
+      {/* Распорка — отделяет меню от профиля внизу */}
+      <div className="flex-1" />
+
+      {/* User Selector — внизу, у кнопки свёртки */}
       {!collapsed && (
         <div className="px-3 py-3 border-t border-[hsl(215,35%,20%)] relative">
           <button

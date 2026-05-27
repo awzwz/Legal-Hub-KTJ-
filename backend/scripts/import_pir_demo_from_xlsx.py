@@ -39,7 +39,7 @@ from app.models import (
     EnforcementProceeding,
     User,
 )
-from app.services.pir_excel_fill import (
+from app.domain.pir_excel_fill import (
     DEBT_FIRST_ROW,
     DEBT_SHEET,
     ENFORCEMENT_FIRST_ROW,
@@ -51,48 +51,114 @@ _DEFAULT_COMPANY = "АО «Пассажирские перевозки»"
 _DEFAULT_BIN = "020540000922"
 
 
-def _pir_import_variation(seq: int) -> tuple[str, str, str, str]:
+_CATEGORY_PATTERNS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("mediation", ("медиатив",)),
+    ("transportation", ("перевозочного процесса", "перевозок")),
+    ("labor", ("трудовые споры", "трудовой спор")),
+    ("procurement", ("закупках", "закупок", "договоров")),
+    ("other", ("иные споры", "иные иски", "прочие споры", "иные")),
+)
+
+
+def _detect_category_from_header(text: str) -> str | None:
+    """Возвращает категорию по тексту строки-разделителя (или None)."""
+    if not text:
+        return None
+    low = text.lower()
+    for cat, needles in _CATEGORY_PATTERNS:
+        for n in needles:
+            if n in low:
+                return cat
+    return None
+
+
+def _build_category_map(ws, start_row: int, max_rows: int) -> dict[int, str]:
+    """Сканирует колонку A с строки 1: после строки-разделителя категория
+    распространяется на все последующие data-строки до следующего разделителя.
+    Возвращает только маппинг для строк ≥ start_row, но категория правильно
+    «протекает» из заголовков, расположенных ВЫШЕ start_row.
     """
-    Детерминированные case_type / status / outcome / risk_level для реалистичной аналитики.
-    seq — порядковый номер импортируемого дела (0, 1, …) до flush в БД.
+    result: dict[int, str] = {}
+    current = "procurement"
+    for r in range(1, start_row + max_rows):
+        a = ws.cell(r, 1).value
+        if isinstance(a, str):
+            cat = _detect_category_from_header(a)
+            if cat is not None:
+                current = cat
+                continue
+        if r >= start_row:
+            result[r] = current
+    return result
+
+
+def _infer_outcome(category: str, judgment_first: str, judgment_appeal: str, judgment_cassation: str) -> str:
+    """Определяет outcome по категории и текстам решений (cassation > appeal > first).
+
+    settled — дела из раздела «Медиативные соглашения».
+    fully_satisfied / partially_satisfied / denied — по тексту последнего по уровню решения.
+    pending — если ничего не подходит.
     """
-    case_types = (
-        "civil",
-        "civil",
-        "civil",
-        "civil",
-        "administrative",
-        "corporate",
-        "labor",
-        "tax",
-        "executive",
-        "criminal",
-        "other",
-        "civil",
-    )
-    ct = case_types[seq % len(case_types)]
-    phase = seq % 11
-    if phase == 0:
-        return ct, "closed", "fully_satisfied", "low"
-    if phase == 1:
-        return ct, "closed", "denied", "high"
-    if phase == 2:
-        return "executive", "execution", "pending", "medium"
-    if phase == 3:
-        return ct, "mediation", "pending", "low"
-    if phase == 4:
-        return ct, "suspended", "pending", "medium"
-    if phase == 5:
-        return ct, "execution", "pending", "high"
-    if phase == 6:
-        return ct, "active", "pending", "high"
-    if phase == 7:
-        return ct, "active", "pending", "low"
-    if phase == 8:
-        return ct, "active", "pending", "medium"
-    if phase == 9:
-        return ct, "active", "pending", "medium"
-    return ct, "active", "pending", "low"
+    if category == "mediation":
+        return "settled"
+    # Берём «самое позднее» по инстанции решение
+    text = (judgment_cassation or judgment_appeal or judgment_first or "").lower()
+    if not text.strip():
+        return "pending"
+    if "удовлетворен частично" in text or "удовлетворены частично" in text:
+        return "partially_satisfied"
+    if (
+        "удовлетворен в полном объеме" in text
+        or "иск удовлетворен" in text
+        or "исковые требования удовлетворены" in text
+    ):
+        # уточняем: «удовлетворены частично» уже отлито выше
+        return "fully_satisfied"
+    if (
+        "в иске отказано" in text
+        or "в удовлетворении иска отказано" in text
+        or "в удовлетворении искового" in text
+        or "в удовлетворении исков" in text
+        or "отказано в удовлетворении" in text
+        or "в удовлетворении апелляционной жалобы отказано" in text
+    ):
+        return "denied"
+    return "pending"
+
+
+def _infer_status(outcome: str, execution_proof_note: str, has_collection: bool) -> str:
+    """Статус дела: closed для решённых, execution если есть исполнение, иначе active."""
+    if outcome in {"fully_satisfied", "partially_satisfied", "settled"}:
+        if execution_proof_note.strip() or has_collection:
+            return "execution"
+        return "closed"
+    if outcome == "denied":
+        return "closed"
+    return "active"
+
+
+def _infer_court_instance(judgment_first: str, judgment_appeal: str, judgment_cassation: str) -> str:
+    if judgment_cassation and judgment_cassation.strip():
+        return "cassation"
+    if judgment_appeal and judgment_appeal.strip():
+        return "appeal"
+    return "first"
+
+
+def _infer_case_type(category: str, status: str) -> str:
+    if category == "labor":
+        return "labor"
+    if status == "execution":
+        return "executive"
+    return "civil"
+
+
+def _infer_risk(claim_amount: Decimal) -> str:
+    if claim_amount > Decimal("50000000"):
+        return "high"
+    if claim_amount < Decimal("5000000"):
+        return "low"
+    return "medium"
 
 
 def _parse_court_cell(val: object) -> tuple[str, str]:
@@ -129,28 +195,65 @@ def _canon_label(s: str) -> str:
     return " ".join(s.split()) if s else ""
 
 
+_SUMMARY_KEYWORDS = ("предъявлено", "удовлетворено", "отказано", "кол-во дел", "кол-во")
+
+
+def _is_summary_row(ws, r: int) -> bool:
+    """Строки сводного блока (предъявлено / удовлетворено / отказано / кол-во).
+
+    Не путать с строкой-разделителем «Медиативные соглашения», которая идёт
+    в колонке A и обозначает раздел.
+    """
+    a = ws.cell(r, 1).value
+    if isinstance(a, str) and _detect_category_from_header(a):
+        return False  # это раздел, а не сводка
+    for c in range(2, 8):  # сводный блок начинается с колонки D-F
+        v = ws.cell(r, c).value
+        if isinstance(v, str):
+            low = v.strip().lower()
+            for kw in _SUMMARY_KEYWORDS:
+                if kw in low:
+                    return True
+    return False
+
+
+def _is_section_header_row(ws, r: int) -> bool:
+    """Строка-разделитель категории: одна непустая ячейка в колонке A."""
+    a = ws.cell(r, 1).value
+    return isinstance(a, str) and _detect_category_from_header(a) is not None
+
+
 def _row_nonempty_истец(ws, r: int) -> bool:
-    if ws.cell(r, 1).value not in (None, ""):
-        return True
-    return any(
-        _txt(ws.cell(r, c).value) != ""
-        for c in (2, 5, 6, 7, 8, 9, 10, 11, 12)
+    if _is_summary_row(ws, r):
+        return False
+    # Требуем юриста, контрагента или текст иска
+    return (
+        _txt(ws.cell(r, 2).value) != ""
+        or _txt(ws.cell(r, 5).value) != ""
+        or _txt(ws.cell(r, 9).value) != ""
     )
 
 
 def _row_nonempty_ответчик(ws, r: int) -> bool:
-    if ws.cell(r, 1).value not in (None, ""):
-        return True
-    return any(
-        _txt(ws.cell(r, c).value) != ""
-        for c in (5, 6, 9, 10, 11, 12, 13)
+    if _is_summary_row(ws, r):
+        return False
+    # На листе ответчик колонка 2 (юрист) часто пуста — проверяем филиал/содержание иска
+    return (
+        _txt(ws.cell(r, 4).value) != ""
+        or _txt(ws.cell(r, 5).value) != ""
+        or _txt(ws.cell(r, 10).value) != ""
     )
 
 
 def _row_nonempty_3лицо(ws, r: int) -> bool:
-    if ws.cell(r, 1).value not in (None, ""):
-        return True
-    return _txt(ws.cell(r, 5).value) != "" or _txt(ws.cell(r, 6).value) != ""
+    if _is_summary_row(ws, r):
+        return False
+    return (
+        _txt(ws.cell(r, 2).value) != ""
+        or _txt(ws.cell(r, 5).value) != ""
+        or _txt(ws.cell(r, 6).value) != ""
+        or _txt(ws.cell(r, 11).value) != ""
+    )
 
 
 def _row_nonempty_enf(ws, r: int) -> bool:
@@ -316,12 +419,17 @@ async def main_async(
             # --- истец ---
             ws = wb["истец"]
             start = FIRST_DATA_ROW["истец"]
+            cat_map_истец = _build_category_map(ws, start, max_rows_per_sheet)
             r = start
             empty_run = 0
             seen_истец = 0
             while r < start + max_rows_per_sheet:
                 if limit is not None and n_cases >= limit:
                     break
+                if _is_section_header_row(ws, r):
+                    empty_run = 0
+                    r += 1
+                    continue
                 if not _row_nonempty_истец(ws, r):
                     empty_run += 1
                     if empty_run >= 5 and seen_истец > 0:
@@ -336,12 +444,29 @@ async def main_async(
                 defendant = _txt(ws.cell(r, 5).value, 512) or "—"
                 case_id = uuid.uuid4()
                 case_number = f"PIR-IMP-{case_id.hex[:10].upper()}"
-                ct, st, oc, rk = _pir_import_variation(n_cases)
+                # Инференс из категории + текстов решений
+                disp_cat = cat_map_истец.get(r, "procurement")
+                j1 = _txt(ws.cell(r, 10).value)
+                ja = _txt(ws.cell(r, 11).value)
+                jc = _txt(ws.cell(r, 12).value)
+                exec_proof = _txt(ws.cell(r, 18).value)
+                rm = _dec(ws.cell(r, 13).value)
+                rf = _dec(ws.cell(r, 14).value)
+                rsf = _dec(ws.cell(r, 15).value)
+                main_debt = _dec(ws.cell(r, 6).value)
+                fines = _dec(ws.cell(r, 7).value)
+                state_fee = _dec(ws.cell(r, 8).value)
+                claim_amount_total = main_debt + fines
+                oc = _infer_outcome(disp_cat, j1, ja, jc)
+                st = _infer_status(oc, exec_proof, (rm + rf + rsf) > Decimal("0"))
+                ci = _infer_court_instance(j1, ja, jc)
+                ct = _infer_case_type(disp_cat, st)
+                rk = _infer_risk(claim_amount_total)
                 c = Case(
                     id=case_id,
                     case_number=case_number,
                     court=court,
-                    court_instance="first",
+                    court_instance=ci,
                     case_type=ct,
                     status=st,
                     outcome=oc,
@@ -349,8 +474,9 @@ async def main_async(
                     opponent_type="juridical",
                     plaintiff=company[:512],
                     defendant=defendant,
-                    company=company[:512],
-                    company_bin=company_bin[:12],
+                    company=defendant[:512],  # фактический контрагент = ответчик
+                    company_bin="",
+                    dispute_category=disp_cat,
                     city="—",
                     judge=judge,
                     filing_date=as_of,
@@ -363,15 +489,12 @@ async def main_async(
                     branch_id=bid,
                     assigned_lawyer_id=lid,
                 )
-                rm = _dec(ws.cell(r, 13).value)
-                rf = _dec(ws.cell(r, 14).value)
-                rsf = _dec(ws.cell(r, 15).value)
                 fin = CaseFinance(
                     case_id=case_id,
-                    claim_amount=_dec(ws.cell(r, 6).value) + _dec(ws.cell(r, 7).value),
-                    main_debt=_dec(ws.cell(r, 6).value),
-                    state_fee=_dec(ws.cell(r, 8).value),
-                    fines=_dec(ws.cell(r, 7).value),
+                    claim_amount=claim_amount_total,
+                    main_debt=main_debt,
+                    state_fee=state_fee,
+                    fines=fines,
                     rep_expenses=Decimal("0"),
                     other_costs=Decimal("0"),
                     paid_amount=rm + rf + rsf,
@@ -382,13 +505,13 @@ async def main_async(
                 lit = _build_case_litigation(
                     case_id,
                     claim_summary=_txt(ws.cell(r, 9).value),
-                    judgment_first=_txt(ws.cell(r, 10).value),
-                    judgment_appeal=_txt(ws.cell(r, 11).value),
-                    judgment_cassation=_txt(ws.cell(r, 12).value),
+                    judgment_first=j1,
+                    judgment_appeal=ja,
+                    judgment_cassation=jc,
                     damage_recovery_note=_txt(ws.cell(r, 19).value),
                     writ_request_note=_txt(ws.cell(r, 16).value),
                     writ_dispatch_note=_txt(ws.cell(r, 17).value),
-                    execution_proof_note=_txt(ws.cell(r, 18).value),
+                    execution_proof_note=exec_proof,
                 )
                 ev = CaseEvent(
                     id=uuid.uuid4(),
@@ -409,12 +532,17 @@ async def main_async(
             # --- ответчик ---
             ws = wb["ответчик"]
             start = FIRST_DATA_ROW["ответчик"]
+            cat_map_отв = _build_category_map(ws, start, max_rows_per_sheet)
             r = start
             empty_run = 0
             seen_ответчик = 0
             while r < start + max_rows_per_sheet:
                 if limit is not None and n_cases >= limit:
                     break
+                if _is_section_header_row(ws, r):
+                    empty_run = 0
+                    r += 1
+                    continue
                 if not _row_nonempty_ответчик(ws, r):
                     empty_run += 1
                     if empty_run >= 5 and seen_ответчик > 0:
@@ -429,12 +557,27 @@ async def main_async(
                 plaintiff = _txt(ws.cell(r, 5).value, 512) or company[:512]
                 case_id = uuid.uuid4()
                 case_number = f"PIR-IMP-{case_id.hex[:10].upper()}"
-                ct, st, oc, rk = _pir_import_variation(n_cases)
+                disp_cat = cat_map_отв.get(r, "procurement")
+                j1 = _txt(ws.cell(r, 11).value)
+                ja = _txt(ws.cell(r, 12).value)
+                jc = _txt(ws.cell(r, 13).value)
+                def_exec = _txt(ws.cell(r, 18).value)
+                main_debt = _dec(ws.cell(r, 6).value)
+                fines = _dec(ws.cell(r, 7).value)
+                rep_exp = _dec(ws.cell(r, 8).value)
+                state_fee = _dec(ws.cell(r, 9).value)
+                paid = _dec(ws.cell(r, 15).value)
+                claim_amount_total = main_debt + fines + state_fee
+                oc = _infer_outcome(disp_cat, j1, ja, jc)
+                st = _infer_status(oc, def_exec, paid > Decimal("0"))
+                ci = _infer_court_instance(j1, ja, jc)
+                ct = _infer_case_type(disp_cat, st)
+                rk = _infer_risk(claim_amount_total)
                 c = Case(
                     id=case_id,
                     case_number=case_number,
                     court=court,
-                    court_instance="first",
+                    court_instance=ci,
                     case_type=ct,
                     status=st,
                     outcome=oc,
@@ -442,8 +585,9 @@ async def main_async(
                     opponent_type="juridical",
                     plaintiff=plaintiff,
                     defendant=company[:512],
-                    company=company[:512],
-                    company_bin=company_bin[:12],
+                    company=plaintiff[:512],  # контрагент = истец
+                    company_bin="",
+                    dispute_category=disp_cat,
                     city="—",
                     judge=judge,
                     filing_date=as_of,
@@ -458,13 +602,13 @@ async def main_async(
                 )
                 fin = CaseFinance(
                     case_id=case_id,
-                    claim_amount=_dec(ws.cell(r, 6).value) + _dec(ws.cell(r, 7).value) + _dec(ws.cell(r, 9).value),
-                    main_debt=_dec(ws.cell(r, 6).value),
-                    state_fee=_dec(ws.cell(r, 9).value),
-                    fines=_dec(ws.cell(r, 7).value),
-                    rep_expenses=_dec(ws.cell(r, 8).value),
+                    claim_amount=claim_amount_total,
+                    main_debt=main_debt,
+                    state_fee=state_fee,
+                    fines=fines,
+                    rep_expenses=rep_exp,
                     other_costs=Decimal("0"),
-                    paid_amount=_dec(ws.cell(r, 15).value),
+                    paid_amount=paid,
                     recovered_main=Decimal("0"),
                     recovered_fines=Decimal("0"),
                     recovered_state_fee=Decimal("0"),
@@ -472,11 +616,14 @@ async def main_async(
                 lit = _build_case_litigation(
                     case_id,
                     claim_summary=_txt(ws.cell(r, 10).value),
-                    judgment_first=_txt(ws.cell(r, 11).value),
-                    judgment_appeal=_txt(ws.cell(r, 12).value),
-                    judgment_cassation=_txt(ws.cell(r, 13).value),
+                    judgment_first=j1,
+                    judgment_appeal=ja,
+                    judgment_cassation=jc,
                     damage_recovery_note=_txt(ws.cell(r, 19).value),
                 )
+                # defendant_execution_note хранится отдельно (не в _build_case_litigation сигнатуре)
+                if def_exec:
+                    lit.defendant_execution_note = def_exec
                 ev = CaseEvent(
                     id=uuid.uuid4(),
                     case_id=case_id,
@@ -496,12 +643,17 @@ async def main_async(
             # --- 3-лицо ---
             ws = wb["3-лицо "]
             start = FIRST_DATA_ROW["3-лицо "]
+            cat_map_3 = _build_category_map(ws, start, max_rows_per_sheet)
             r = start
             empty_run = 0
             seen_3 = 0
             while r < start + max_rows_per_sheet:
                 if limit is not None and n_cases >= limit:
                     break
+                if _is_section_header_row(ws, r):
+                    empty_run = 0
+                    r += 1
+                    continue
                 if not _row_nonempty_3лицо(ws, r):
                     empty_run += 1
                     if empty_run >= 5 and seen_3 > 0:
@@ -517,12 +669,26 @@ async def main_async(
                 defendant = _txt(ws.cell(r, 6).value, 512) or "—"
                 case_id = uuid.uuid4()
                 case_number = f"PIR-IMP-{case_id.hex[:10].upper()}"
-                ct, st, oc, rk = _pir_import_variation(n_cases)
+                disp_cat = cat_map_3.get(r, "procurement")
+                j1 = _txt(ws.cell(r, 12).value)
+                ja = _txt(ws.cell(r, 13).value)
+                jc = _txt(ws.cell(r, 14).value)
+                main_debt = _dec(ws.cell(r, 7).value)
+                fines = _dec(ws.cell(r, 8).value)
+                rep_exp = _dec(ws.cell(r, 9).value)
+                state_fee = _dec(ws.cell(r, 10).value)
+                paid = _dec(ws.cell(r, 16).value)
+                claim_amount_total = main_debt + fines + state_fee
+                oc = _infer_outcome(disp_cat, j1, ja, jc)
+                st = _infer_status(oc, "", paid > Decimal("0"))
+                ci = _infer_court_instance(j1, ja, jc)
+                ct = _infer_case_type(disp_cat, st)
+                rk = _infer_risk(claim_amount_total)
                 c = Case(
                     id=case_id,
                     case_number=case_number,
                     court=court,
-                    court_instance="first",
+                    court_instance=ci,
                     case_type=ct,
                     status=st,
                     outcome=oc,
@@ -530,8 +696,9 @@ async def main_async(
                     opponent_type="juridical",
                     plaintiff=plaintiff,
                     defendant=defendant,
-                    company=company[:512],
-                    company_bin=company_bin[:12],
+                    company=defendant[:512],  # контрагент по делу как ответчик в споре
+                    company_bin="",
+                    dispute_category=disp_cat,
                     city="—",
                     judge=judge,
                     filing_date=as_of,
@@ -546,13 +713,13 @@ async def main_async(
                 )
                 fin = CaseFinance(
                     case_id=case_id,
-                    claim_amount=_dec(ws.cell(r, 7).value) + _dec(ws.cell(r, 8).value) + _dec(ws.cell(r, 10).value),
-                    main_debt=_dec(ws.cell(r, 7).value),
-                    state_fee=_dec(ws.cell(r, 10).value),
-                    fines=_dec(ws.cell(r, 8).value),
-                    rep_expenses=_dec(ws.cell(r, 9).value),
+                    claim_amount=claim_amount_total,
+                    main_debt=main_debt,
+                    state_fee=state_fee,
+                    fines=fines,
+                    rep_expenses=rep_exp,
                     other_costs=Decimal("0"),
-                    paid_amount=_dec(ws.cell(r, 16).value),
+                    paid_amount=paid,
                     recovered_main=Decimal("0"),
                     recovered_fines=Decimal("0"),
                     recovered_state_fee=Decimal("0"),
@@ -560,9 +727,9 @@ async def main_async(
                 lit = _build_case_litigation(
                     case_id,
                     claim_summary=_txt(ws.cell(r, 11).value),
-                    judgment_first=_txt(ws.cell(r, 12).value),
-                    judgment_appeal=_txt(ws.cell(r, 13).value),
-                    judgment_cassation=_txt(ws.cell(r, 14).value),
+                    judgment_first=j1,
+                    judgment_appeal=ja,
+                    judgment_cassation=jc,
                     damage_recovery_note=_txt(ws.cell(r, 19).value),
                 )
                 ev = CaseEvent(
@@ -601,21 +768,21 @@ async def main_async(
                 if cid is None:
                     case_id = uuid.uuid4()
                     case_number = f"PIR-IMP-ENF-{case_id.hex[:8].upper()}"
-                    ct, st, oc, rk = _pir_import_variation(n_cases)
                     stub = Case(
                         id=case_id,
                         case_number=case_number,
                         court="—",
                         court_instance="first",
-                        case_type=ct,
-                        status=st,
-                        outcome=oc,
+                        case_type="executive",
+                        status="execution",
+                        outcome="fully_satisfied",
                         party_role="plaintiff",
                         opponent_type="juridical",
                         plaintiff=company[:512],
                         defendant=debtor_name[:512] or "—",
-                        company=company[:512],
-                        company_bin=company_bin[:12],
+                        company=(debtor_name[:512] or "—"),
+                        company_bin=(debtor_bin or "")[:12],
+                        dispute_category="other",
                         city="—",
                         judge="—",
                         filing_date=as_of,
@@ -623,7 +790,7 @@ async def main_async(
                         payment_deadline=None,
                         last_updated=as_of,
                         days_overdue=0,
-                        risk_level=rk,
+                        risk_level="medium",
                         is_archived=False,
                         branch_id=stub_branch_id,
                         assigned_lawyer_id=fallback_id,

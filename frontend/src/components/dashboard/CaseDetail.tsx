@@ -23,6 +23,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import ProceduralDeadlinesBlock from "@/components/dashboard/ProceduralDeadlinesBlock";
 
 interface CaseDetailProps {
   caseId: string;
@@ -339,15 +340,16 @@ const CaseDetail = ({ caseId, onBack }: CaseDetailProps) => {
   const caseTypeKeys = Object.keys(caseTypeLabels) as CaseType[];
   const courtInstKeys = Object.keys(courtInstanceLabels) as CourtInstance[];
   const partyRoleKeys = Object.keys(partyRoleLabels) as PartyRole[];
-  const statusKeys = Object.keys(caseStatusLabels) as CaseStatus[];
-  const outcomeKeys: CaseOutcome[] = ["fully_satisfied", "partially_satisfied", "denied", "settled", "dismissed", "pending"];
+  const statusKeys: CaseStatus[] = ["active", "execution"]; // только два видимых статуса
+  const outcomeKeys: CaseOutcome[] = ["fully_satisfied", "partially_satisfied", "denied", "settled", "dismissed", "pending", "returned"];
   const outcomeLabels: Record<CaseOutcome, string> = {
     fully_satisfied: "Полностью удовлетворено",
     partially_satisfied: "Частично",
     denied: "Отказано",
-    settled: "Урегулировано",
+    settled: "Медиативное/мировое соглашение",
     dismissed: "Прекращено",
-    pending: "В рассмотрении",
+    pending: "Решение не вынесено",
+    returned: "Иск возвращён",
   };
   const riskKeys = ["low", "medium", "high"] as const;
 
@@ -405,7 +407,7 @@ const CaseDetail = ({ caseId, onBack }: CaseDetailProps) => {
   ];
 
   const riskColors = { low: "bg-green-100 text-green-700 border border-green-200", medium: "bg-blue-100 text-blue-700 border border-blue-200", high: "bg-red-100 text-red-700 border border-red-200" };
-  const riskLabels = { low: "Низкий риск", medium: "Средний риск", high: "Высокий риск" };
+  const riskLabels = { low: "Низкая значимость", medium: "Средняя значимость", high: "Высокая значимость" };
 
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
@@ -448,6 +450,9 @@ const CaseDetail = ({ caseId, onBack }: CaseDetailProps) => {
           {caseStatusLabels[caseData.status]}
         </span>
       </div>
+
+      <ProceduralDeadlinesBlock caseId={caseData.id} />
+      <RelatedClaimsBlock caseId={caseData.id} />
 
       {/* Tabs */}
       <div className="flex gap-1 border-b mb-6 overflow-x-auto custom-scrollbar">
@@ -555,12 +560,15 @@ const CaseDetail = ({ caseId, onBack }: CaseDetailProps) => {
                 </div>
                 <div className="flex items-start gap-2">
                   <Calendar className="w-4 h-4 text-blue-400 mt-0.5" />
-                  <div>
-                    <p className="text-blue-500 text-xs">Ближайшее заседание</p>
+                  <div><p className="text-blue-500 text-xs">Ближайшее заседание</p>
                     <p className={cn("font-medium", caseData.nextHearing && caseData.nextHearing !== "not_set" ? "text-blue-700" : "text-blue-400")}>
                       {caseData.nextHearing === "not_set" ? "Не назначено" : (caseData.nextHearing || "Не назначено")}
                     </p>
                   </div>
+                </div>
+                <div className="col-span-2 flex items-start gap-2">
+                  <Gavel className="w-4 h-4 text-blue-400 mt-0.5 shrink-0" />
+                  <div><p className="text-blue-500 text-xs">Наименование суда</p><p className="font-medium text-blue-900">{caseData.court || "—"}</p></div>
                 </div>
               </div>
 
@@ -660,7 +668,7 @@ const CaseDetail = ({ caseId, onBack }: CaseDetailProps) => {
                       </select>
                     </div>
                     <div>
-                      <Label className="text-xs text-blue-600">Риск</Label>
+                      <Label className="text-xs text-blue-600">Значимость</Label>
                       <select
                         className="mt-1 w-full h-9 rounded-md border border-input bg-background px-2 text-sm"
                         value={infoDraft.riskLevel}
@@ -785,11 +793,11 @@ const CaseDetail = ({ caseId, onBack }: CaseDetailProps) => {
                       </select>
                     </div>
                     <div>
-                      <Label className="text-xs text-blue-600">Заседание (ISO дата/время или пусто)</Label>
+                      <Label className="text-xs text-blue-600">Следующее заседание</Label>
                       <Input
+                        type="datetime-local"
                         className="mt-1"
-                        placeholder="2025-12-31T10:00"
-                        value={infoDraft.nextHearing}
+                        value={infoDraft.nextHearing ? infoDraft.nextHearing.slice(0, 16) : ""}
                         onChange={(e) => setInfoDraft({ ...infoDraft, nextHearing: e.target.value })}
                       />
                     </div>
@@ -1581,3 +1589,54 @@ const CaseDetail = ({ caseId, onBack }: CaseDetailProps) => {
 };
 
 export default CaseDetail;
+
+/** Компактный блок со списком связанных претензий по делу. */
+function RelatedClaimsBlock({ caseId }: { caseId: string }) {
+  const { data: claims = [] } = useQuery({
+    queryKey: ["claims-for-case", caseId],
+    queryFn: async () => {
+      const res = await fetch(`/api/v1/claims`, { headers: apiAuthHeaders() });
+      if (!res.ok) return [];
+      const all = (await res.json()) as Array<{ id: string; outgoingNumber: string; claimDate: string; subject: string; amount: number; status: string; caseId: string | null }>;
+      return all.filter((c) => c.caseId === caseId);
+    },
+    staleTime: 60_000,
+  });
+
+  if (claims.length === 0) return null;
+
+  const statusLabel: Record<string, string> = {
+    collected: "Взыскано",
+    not_collected: "Не взыскано",
+    offset: "Удержано безакц.",
+    recalculation: "Перерасчёт",
+  };
+  const statusCls: Record<string, string> = {
+    collected: "bg-green-100 text-green-700 border-green-200",
+    not_collected: "bg-amber-100 text-amber-700 border-amber-200",
+    offset: "bg-blue-100 text-blue-700 border-blue-200",
+    recalculation: "bg-slate-100 text-slate-700 border-slate-200",
+  };
+
+  return (
+    <div className="mb-6 bg-amber-50/40 border border-amber-200 rounded-lg p-3">
+      <h4 className="text-sm font-semibold text-amber-900 mb-2 flex items-center gap-2">
+        <FileText className="w-4 h-4" />
+        Связанные претензии ({claims.length})
+      </h4>
+      <div className="space-y-1">
+        {claims.map((c) => (
+          <div key={c.id} className="flex items-center gap-3 text-xs bg-white rounded-md px-2 py-1.5 border border-amber-100">
+            <span className="font-medium text-blue-900 min-w-[180px]">{c.outgoingNumber}</span>
+            <span className="text-muted-foreground">{c.claimDate}</span>
+            <span className="flex-1 truncate text-slate-700">{c.subject}</span>
+            <span className="tabular-nums">{formatAmount(c.amount)}</span>
+            <span className={cn("text-[10px] px-1.5 py-0.5 rounded border", statusCls[c.status] || "")}>
+              {statusLabel[c.status] || c.status}
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}

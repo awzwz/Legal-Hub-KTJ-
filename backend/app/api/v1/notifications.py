@@ -3,16 +3,47 @@ from __future__ import annotations
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Body, Depends
 from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import get_current_user
 from app.db.session import get_db
 from app.models import User
-from app.services import notification_service
+from app.domain import notification_service
+from app.domain.notification_service import NOTIFICATION_TYPES
 
 router = APIRouter(prefix="/notifications", tags=["notifications"])
+
+
+@router.get("/preferences", summary="Get notification preferences for current user")
+async def get_preferences(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    user: Annotated[User, Depends(get_current_user)],
+):
+    enabled = await notification_service.get_user_preferences(db, user)
+    # Возвращаем список типов с лейблами + текущее состояние enabled.
+    return JSONResponse(
+        {
+            "types": [
+                {"type": t, "label": label, "enabled": enabled.get(t, True)}
+                for t, label in NOTIFICATION_TYPES.items()
+            ]
+        }
+    )
+
+
+@router.put("/preferences", summary="Update notification preferences")
+async def update_preferences(
+    payload: Annotated[dict, Body(...)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    user: Annotated[User, Depends(get_current_user)],
+):
+    prefs = payload.get("preferences") or {}
+    # Валидируем тип значений (bool) — отсекаем мусор.
+    cleaned = {k: bool(v) for k, v in prefs.items() if isinstance(k, str)}
+    await notification_service.update_user_preferences(db, user, cleaned)
+    return JSONResponse({"ok": True, "saved": len(cleaned)})
 
 
 @router.get("", summary="List notifications for current user")

@@ -1,18 +1,19 @@
 export type CaseStatus = "active" | "mediation" | "suspended" | "execution" | "closed";
-export type CaseOutcome = "fully_satisfied" | "partially_satisfied" | "denied" | "settled" | "dismissed" | "pending";
+export type CaseOutcome = "fully_satisfied" | "partially_satisfied" | "denied" | "settled" | "dismissed" | "pending" | "returned";
 export type CourtInstance = "first" | "appeal" | "cassation" | "supreme";
 export type CaseType = "civil" | "administrative" | "criminal" | "executive" | "labor" | "tax" | "corporate" | "other";
 export type PartyRole = "plaintiff" | "defendant" | "third_party";
 
 /**
- * Раздел шаблона ПИР, в который дело попадёт при экспорте.
+ * Категория иска.
  * - procurement     — Иски, связанные с нарушением законодательства о закупках и вытекающие из договоров
- * - transportation  — Иски, вытекающие из перевозочного процесса (только для роли «ответчик» в шаблоне)
+ * - transportation  — Иски, вытекающие из перевозочного процесса
+ * - government      — Иски, вытекающие из споров с госорганами
  * - labor           — Трудовые споры
- * - other           — Иные споры
- * - mediation       — Медиативные соглашения
+ * - other           — Иные
+ * - mediation       — Медиативные соглашения (внутреннее, не показывается в фильтре)
  */
-export type DisputeCategory = "procurement" | "transportation" | "labor" | "other" | "mediation";
+export type DisputeCategory = "procurement" | "transportation" | "government" | "labor" | "other" | "mediation";
 
 export interface Payment {
   id: string;
@@ -180,33 +181,49 @@ export interface AuditEntry {
 
 export const courtInstanceLabels: Record<CourtInstance, string> = {
   first: "Первая инстанция",
-  appeal: "Апелляция",
-  cassation: "Кассация",
+  appeal: "Апелляционная инстанция",
+  cassation: "Кассационная инстанция",
   supreme: "Верховный суд",
 };
 
 export const caseStatusLabels: Record<CaseStatus, string> = {
   active: "В работе",
-  mediation: "Медиация",
-  suspended: "Приостановлено",
-  execution: "Исполнение",
-  closed: "Закрыто",
+  mediation: "В работе",
+  suspended: "В работе",
+  execution: "Исполнено",
+  closed: "Исполнено",
+};
+
+/** Видимые значения статуса дела в фильтре/форме (два укрупнённых статуса). */
+export const visibleCaseStatuses: { key: CaseStatus; label: string }[] = [
+  { key: "active", label: "В работе" },
+  { key: "execution", label: "Исполнено" },
+];
+
+/** Группа статусов в БД, которая соответствует укрупнённому видимому статусу. */
+export const caseStatusGroup: Record<CaseStatus, "active" | "execution"> = {
+  active: "active",
+  mediation: "active",
+  suspended: "active",
+  execution: "execution",
+  closed: "execution",
 };
 
 export const caseOutcomeLabels: Record<CaseOutcome, string> = {
   fully_satisfied: "Иск удовлетворен",
   partially_satisfied: "Частично удовлетворен",
   denied: "В иске отказано",
-  settled: "Мировое соглашение",
+  settled: "Заключено медиативное/мировое соглашение",
   dismissed: "Оставлено без рассмотрения",
-  pending: "Нет решения",
+  pending: "Решение не вынесено",
+  returned: "Иск возвращён",
 };
 
 export const caseTypeLabels: Record<CaseType, string> = {
   civil: "Гражданское",
   administrative: "Административное",
   criminal: "Уголовное",
-  executive: "Исполнительное",
+  executive: "Исполнительное производство",
   labor: "Трудовое",
   tax: "Налоговое",
   corporate: "Корпоративное",
@@ -219,21 +236,23 @@ export const partyRoleLabels: Record<PartyRole, string> = {
   third_party: "Третье лицо",
 };
 
-/** Подписи разделов ПИР для UI (Select/фильтры). Совпадают с заголовками шаблона КТЖ. */
+/** Подписи категорий иска для UI (Select/фильтры). */
 export const disputeCategoryLabels: Record<DisputeCategory, string> = {
-  procurement: "Иски о закупках/договорах",
-  transportation: "Перевозочный процесс",
+  procurement: "Иски, связанные с нарушением законодательства о закупках и вытекающие из договоров",
+  transportation: "Иски, вытекающие из перевозочного процесса",
+  government: "Иски, вытекающие из споров с госорганами",
   labor: "Трудовые споры",
-  other: "Иные споры",
+  other: "Иные",
   mediation: "Медиативные соглашения",
 };
 
-/** Полные подписи (как в шаблоне) — для отображения в карточке дела или подсказке. */
+/** Полные подписи — для отображения в карточке дела или подсказке. */
 export const disputeCategoryFullLabels: Record<DisputeCategory, string> = {
   procurement: "Иски, связанные с нарушением законодательства о закупках и вытекающие из договоров",
   transportation: "Иски, вытекающие из перевозочного процесса",
+  government: "Иски, вытекающие из споров с госорганами",
   labor: "Трудовые споры",
-  other: "Иные споры",
+  other: "Иные",
   mediation: "Медиативные соглашения",
 };
 
@@ -242,9 +261,9 @@ export const disputeCategoryFullLabels: Record<DisputeCategory, string> = {
  * на «истец» нет «перевозочные» — такие дела сваливаются в «Иные споры».
  */
 export const allowedDisputeCategoriesForRole: Record<PartyRole, DisputeCategory[]> = {
-  plaintiff: ["procurement", "labor", "other", "mediation"],
-  defendant: ["procurement", "transportation", "labor", "other", "mediation"],
-  third_party: ["procurement", "labor", "other", "mediation"],
+  plaintiff: ["procurement", "transportation", "government", "labor", "other", "mediation"],
+  defendant: ["procurement", "transportation", "government", "labor", "other", "mediation"],
+  third_party: ["procurement", "transportation", "government", "labor", "other", "mediation"],
 };
 
 export const commentTypeLabels: Record<string, string> = {
@@ -254,7 +273,31 @@ export const commentTypeLabels: Record<string, string> = {
   info: "Информация",
 };
 
-export const branches = ["Центральный аппарат", "Северный", "Южный", "Западный", "Экспресс", "Центральный"];
+export const branches = [
+  "ЦА - Центральный аппарат",
+  "АО «Вагонсервис»",
+  'РФ «Северный»',
+  'РФ «Западный»',
+  'РФ «Южный»',
+  'Филиал «Экспресс»',
+  'Филиал «Пригородные перевозки»',
+  'Филиал «Сұңқар»',
+];
+
+/** Нормализует название филиала из БД к каноническому виду. */
+export function normalizeBranchName(raw: string | null | undefined): string | null {
+  if (!raw) return null;
+  const s = raw.trim().toLowerCase().replace(/[«»"']/g, "").replace(/\s+/g, " ");
+  if (/^(цлю|цюс|цлвсю|цюс\/цлю|центральный аппарат|центральный|ца|цлю|цлвсю)/.test(s)) return "ЦА - Центральный аппарат";
+  if (/вагонсервис/.test(s)) return "АО «Вагонсервис»";
+  if (/северн/.test(s)) return 'РФ «Северный»';
+  if (/западн/.test(s)) return 'РФ «Западный»';
+  if (/южн/.test(s)) return 'РФ «Южный»';
+  if (/экспресс/.test(s)) return 'Филиал «Экспресс»';
+  if (/пригородн/.test(s)) return 'Филиал «Пригородные перевозки»';
+  if (/с[уұ]н[кқ]ар/.test(s)) return 'Филиал «Сұңқар»';
+  return raw.trim();
+}
 
 /**
  * Не названия структурных подразделений (часто ошибочные строки из ПИР в колонке «филиал»).
@@ -377,43 +420,77 @@ export const formatAmountShort = (amount: number): string => {
  * Статистика по юристам. Без `lawyerNames` — только те, кто встречается в `cases` (удобно для графиков с периодом).
  * С `lawyerNames` — полный справочник (например, активные юристы из БД + любые ФИО из дел).
  */
+const isActiveNow = (c: LegalCase): boolean => {
+  if (c.status === "active" || c.status === "mediation" || c.status === "suspended") return true;
+  if (c.status === "execution") {
+    const note = (c.litigation?.damageRecoveryNote || "").trim().toLowerCase();
+    return note !== "исполнено" && note !== "прекращено";
+  }
+  return false;
+};
+
+const workloadLevelFor = (n: number): "free" | "normal" | "busy" | "overloaded" => {
+  if (n <= 3) return "free";
+  if (n <= 7) return "normal";
+  if (n <= 12) return "busy";
+  return "overloaded";
+};
+
 export const getLawyerStats = (cases: LegalCase[], lawyerNames?: string[]) => {
   const names =
     lawyerNames && lawyerNames.length > 0
       ? [...new Set(lawyerNames.map((n) => n.trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, "ru"))
       : getLawyerNamesFromCases(cases);
-  return names
-    .map((lawyer) => {
-      const lawyerCases = cases.filter((c) => c.assignedLawyer === lawyer);
-      const won = lawyerCases.filter(
-        (c) => c.outcome === "fully_satisfied" || c.outcome === "partially_satisfied" || c.outcome === "settled",
-      ).length;
-      const lost = lawyerCases.filter((c) => c.outcome === "denied" || c.outcome === "dismissed").length;
-      const active = lawyerCases.filter((c) => ["active", "mediation", "suspended", "execution"].includes(c.status)).length;
-      const totalAmount = lawyerCases.reduce((s, c) => s + c.claimAmount, 0);
-      const avgDays =
-        lawyerCases.length > 0
-          ? Math.round(
-              lawyerCases.reduce((s, c) => {
-                const start = new Date(c.filingDate);
-                const end = new Date(c.lastUpdated);
-                return s + (end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24);
-              }, 0) / lawyerCases.length,
-            )
-          : 0;
+  const rows = names.map((lawyer) => {
+    const lawyerCases = cases.filter((c) => c.assignedLawyer === lawyer);
+    const won = lawyerCases.filter(
+      (c) => c.outcome === "fully_satisfied" || c.outcome === "partially_satisfied" || c.outcome === "settled",
+    ).length;
+    const lost = lawyerCases.filter((c) => c.outcome === "denied" || c.outcome === "dismissed").length;
+    const active = lawyerCases.filter((c) => ["active", "mediation", "suspended", "execution"].includes(c.status)).length;
+    const activeNow = lawyerCases.filter(isActiveNow).length;
+    const totalAmount = lawyerCases.reduce((s, c) => s + c.claimAmount, 0);
+    const avgDays =
+      lawyerCases.length > 0
+        ? Math.round(
+            lawyerCases.reduce((s, c) => {
+              const start = new Date(c.filingDate);
+              const end = new Date(c.lastUpdated);
+              return s + (end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24);
+            }, 0) / lawyerCases.length,
+          )
+        : 0;
+    const winRate = lawyerCases.length > 0 ? Math.round((won / Math.max(won + lost, 1)) * 100) : 0;
+    return {
+      name: lawyer,
+      totalCases: lawyerCases.length,
+      won,
+      lost,
+      active,
+      activeNow,
+      totalAmount,
+      avgDays,
+      winRate,
+      workloadLevel: workloadLevelFor(activeNow),
+      workloadPercent: 0,
+      compositeScore: 0,
+    };
+  });
 
-      return {
-        name: lawyer,
-        totalCases: lawyerCases.length,
-        won,
-        lost,
-        active,
-        totalAmount,
-        avgDays,
-        winRate: lawyerCases.length > 0 ? Math.round((won / Math.max(won + lost, 1)) * 100) : 0,
-      };
-    })
-    .sort((a, b) => b.winRate - a.winRate);
+  const maxActive = Math.max(1, ...rows.map((r) => r.activeNow));
+  const maxTotal = Math.max(1, ...rows.map((r) => r.totalCases));
+  const maxAmount = Math.max(1, ...rows.map((r) => r.totalAmount));
+  const minAvgDays = Math.min(...rows.filter((r) => r.avgDays > 0).map((r) => r.avgDays), Infinity);
+
+  for (const r of rows) {
+    r.workloadPercent = Math.round((r.activeNow / maxActive) * 100);
+    const volumeScore = (r.totalCases / maxTotal) * 100;
+    const amountScore = (r.totalAmount / maxAmount) * 100;
+    const speedScore = r.avgDays > 0 && Number.isFinite(minAvgDays) ? Math.min(100, (minAvgDays / r.avgDays) * 100) : 0;
+    r.compositeScore = Math.round(r.winRate * 0.4 + volumeScore * 0.25 + amountScore * 0.2 + speedScore * 0.15);
+  }
+
+  return rows.sort((a, b) => b.winRate - a.winRate);
 };
 
 // Role system
@@ -441,12 +518,13 @@ export const USER_STORAGE_KEY = "court_flow_current_user";
 
 // Permissions helper
 export const canViewAllCases = (user: User): boolean =>
-  user.role === "director" || user.role === "chief_lawyer" || user.role === "accountant" || user.branch === "Центральный аппарат";
+  user.role === "director" || user.role === "chief_lawyer" || user.role === "accountant" || (user.branch || "").includes("Центральный аппарат");
 export const canViewAllBranches = (user: User): boolean => user.role === "director" || user.role === "chief_lawyer";
 export const canViewAllAnalytics = (user: User): boolean => user.role === "director" || user.role === "chief_lawyer";
 export const canViewAuditLog = (user: User): boolean => user.role === "director" || user.role === "chief_lawyer";
 export const canEditCase = (user: User, caseData: LegalCase): boolean => {
   if (user.role === "director" || user.role === "chief_lawyer") return true;
+  if ((user.branch || "").includes("Центральный аппарат")) return true;
   if (user.role === "branch_lawyer") return caseData.branch === user.branch;
   return false;
 };

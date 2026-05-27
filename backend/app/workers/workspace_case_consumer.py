@@ -10,7 +10,7 @@ from uuid import UUID
 
 from app.db.session import SessionLocal
 from app.models import Notification
-from app.services.redis_client import get_redis
+from app.domain.redis_client import get_redis
 from app.workers.outbox_dispatcher import STREAM_KEY
 
 _log = logging.getLogger(__name__)

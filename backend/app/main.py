@@ -7,7 +7,7 @@ app = create_legalhub_app(
     title="LegalHUB API",
     description=(
         "REST API for LegalHUB КТЖ (монолит для локальной разработки). Public JSON uses **camelCase**. "
-        "В Docker см. микросервисы `app.svc.iam`, `app.svc.legal`, `app.svc.workspace`, `app.svc.reporting`."
+        "В Docker см. микросервисы `app.entrypoints.iam`, `app.entrypoints.legal`, `app.entrypoints.workspace`, `app.entrypoints.reporting`."
     ),
     v1_router=api_router,
     include_internal_payments=True,

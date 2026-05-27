@@ -21,7 +21,7 @@ from app.models import (
     EnforcementProceeding,
     User,
 )
-from app.services.pir_excel_fill import (
+from app.domain.pir_excel_fill import (
     DEBT_FIRST_ROW,
     ENFORCEMENT_FIRST_ROW,
     FIRST_DATA_ROW,

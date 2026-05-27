@@ -14,8 +14,8 @@ from app.core.deps import get_current_user
 from app.db.session import get_db
 from app.models import User
 from app.schemas.report import ReportRequestCreate, ReportRequestOut
-from app.services import audit_write, pir_excel_export, report_service
-from app.services import report_storage
+from app.domain import audit_write, pir_excel_export, report_service
+from app.domain import report_storage
 
 logger = logging.getLogger(__name__)
 

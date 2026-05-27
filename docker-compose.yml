@@ -1,3 +1,8 @@
+# Образы содержат снимок кода на момент сборки (Vite-бандл в `web`, Python в сервисах API).
+# После правок frontend/ или backend/ пересоберите, иначе в Docker останется старый UI/код:
+#   docker compose up -d --build
+# Только фронт:  docker compose build web && docker compose up -d web
+# Только бэкенд: docker compose build migrate svc-iam svc-legal svc-workspace svc-reporting && docker compose up -d
 services:
   db:
     image: postgres:15-alpine
@@ -35,6 +40,7 @@ services:
     environment: &api_env
       DATABASE_URL: postgresql+asyncpg://legalhub:legalhub@db:5432/legalhub
       REDIS_URL: redis://redis:6379/0
+      ENV: dev
       RELAX_AUTH: "true"
       AUTO_DDL: "false"
       JWT_SECRET: docker-dev-only-change-me
@@ -49,7 +55,7 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    command: ["uvicorn", "app.svc.iam:app", "--host", "0.0.0.0", "--port", "8001"]
+    command: ["uvicorn", "app.entrypoints.iam:app", "--host", "0.0.0.0", "--port", "8001"]
     environment: *api_env
     ports:
       - "8001:8001"
@@ -65,7 +71,7 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    command: ["uvicorn", "app.svc.legal:app", "--host", "0.0.0.0", "--port", "8002"]
+    command: ["uvicorn", "app.entrypoints.legal:app", "--host", "0.0.0.0", "--port", "8002"]
     environment: *api_env
     ports:
       - "8002:8002"
@@ -81,7 +87,7 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    command: ["uvicorn", "app.svc.workspace:app", "--host", "0.0.0.0", "--port", "8003"]
+    command: ["uvicorn", "app.entrypoints.workspace:app", "--host", "0.0.0.0", "--port", "8003"]
     environment: *api_env
     ports:
       - "8003:8003"
@@ -97,7 +103,7 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    command: ["uvicorn", "app.svc.reporting:app", "--host", "0.0.0.0", "--port", "8004"]
+    command: ["uvicorn", "app.entrypoints.reporting:app", "--host", "0.0.0.0", "--port", "8004"]
     environment: *api_env
     ports:
       - "8004:8004"
@@ -109,6 +115,7 @@ services:
       migrate:
         condition: service_completed_successfully
 
+  # Статика из frontend/ копируется на этапе docker build — без rebuild контейнер не увидит правок TS/React.
   web:
     build:
       context: .

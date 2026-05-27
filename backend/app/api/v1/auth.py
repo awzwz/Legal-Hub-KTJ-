@@ -3,13 +3,14 @@ from __future__ import annotations
 from datetime import timedelta
 from typing import Annotated, Optional
 
-from fastapi import APIRouter, Cookie, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, Response, status
 from fastapi.responses import JSONResponse
 from jose import JWTError
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
+from app.core.rate_limit import limiter
 from app.core.security import (
     create_access_token,
     create_refresh_token,
@@ -22,13 +23,15 @@ from app.core.deps import get_current_user
 from app.db.iam_session import get_identity_db
 from app.models import RefreshToken, User
 from app.schemas.auth import ChangePasswordBody, LoginRequest, TokenResponse
-from app.services import audit_write, user_service
+from app.domain import audit_write, user_service
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 
 @router.post("/login", response_model=TokenResponse)
+@limiter.limit("10/minute")
 async def login(
+    request: Request,
     body: LoginRequest,
     response: Response,
     db: Annotated[AsyncSession, Depends(get_identity_db)],
@@ -57,8 +60,8 @@ async def login(
         key="refresh_token",
         value=refresh,
         httponly=True,
-        secure=False,
-        samesite="lax",
+        secure=settings.cookie_secure,
+        samesite=settings.cookie_samesite,
         max_age=settings.refresh_token_expire_days * 86400,
         path="/api/v1/auth",
     )
@@ -66,7 +69,9 @@ async def login(
 
 
 @router.post("/refresh", response_model=TokenResponse)
+@limiter.limit("30/minute")
 async def refresh_token(
+    request: Request,
     response: Response,
     db: Annotated[AsyncSession, Depends(get_identity_db)],
     refresh_token: Annotated[Optional[str], Cookie()] = None,
@@ -90,7 +95,7 @@ async def refresh_token(
     if not row or row.revoked_at is not None or row.expires_at < utcnow():
         raise HTTPException(status_code=401, detail="Refresh revoked or expired")
 
-    from app.services.redis_client import get_redis
+    from app.domain.redis_client import get_redis
 
     redis = await get_redis()
     if redis is not None and await redis.get(f"revoked_refresh:{jti}"):
@@ -120,8 +125,8 @@ async def refresh_token(
         key="refresh_token",
         value=refresh,
         httponly=True,
-        secure=False,
-        samesite="lax",
+        secure=settings.cookie_secure,
+        samesite=settings.cookie_samesite,
         max_age=settings.refresh_token_expire_days * 86400,
         path="/api/v1/auth",
     )
@@ -143,7 +148,7 @@ async def logout(
         if jti:
             await db.execute(update(RefreshToken).where(RefreshToken.jti == jti).values(revoked_at=utcnow()))
             await db.commit()
-            from app.services.redis_client import get_redis
+            from app.domain.redis_client import get_redis
 
             r = await get_redis()
             if r is not None:

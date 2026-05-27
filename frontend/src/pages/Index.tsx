@@ -1,13 +1,14 @@
 import { useState, useCallback, useMemo } from "react";
 import AppSidebar from "@/components/layout/AppSidebar";
 import AppHeader from "@/components/layout/AppHeader";
-import DashboardStats from "@/components/dashboard/DashboardStats";
+import DashboardStats, { type DrillDownPayload } from "@/components/dashboard/DashboardStats";
 import DashboardCharts from "@/components/dashboard/DashboardCharts";
 import CasesTable from "@/components/dashboard/CasesTable";
 import CaseDetail from "@/components/dashboard/CaseDetail";
 import { CasesFilterBar, defaultFilters, useFilteredCases, type CaseFilters } from "@/components/dashboard/CasesFilterBar";
 import NotificationsPage from "@/components/pages/NotificationsPage";
 import CounterpartiesPage from "@/components/pages/CounterpartiesPage";
+import ClaimsPage from "@/components/pages/ClaimsPage";
 import AnalyticsPage from "@/components/pages/AnalyticsPage";
 import ReportsPage from "@/components/pages/ReportsPage";
 import AuditPage from "@/components/pages/AuditPage";
@@ -21,10 +22,12 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
 import { Button } from "@/components/ui/button";
-import { CalendarRange, Calendar as CalendarIcon } from "lucide-react";
+import { CalendarRange, Calendar as CalendarIcon, FileSpreadsheet } from "lucide-react";
 import { format } from "date-fns";
 import { ru } from "date-fns/locale";
 import type { DateRange } from "react-day-picker";
+import { exportCasesToExcel } from "@/lib/exportCases";
+import { toast } from "@/hooks/use-toast";
 
 type DashboardPeriod = "week" | "month" | "quarter" | "year" | "all" | "custom";
 
@@ -56,6 +59,28 @@ const Index = () => {
   const handleUserChange = useCallback(() => {
     setSelectedCaseId(null);
     setActiveSection("dashboard");
+  }, []);
+
+  /** Клик по карточке «Обзора» — переключаемся на реестр дел с применённым пресет-фильтром. */
+  const handleDrillDown = useCallback((payload: DrillDownPayload) => {
+    const { key, caseIds } = payload;
+    if (key === "all") {
+      setFilters(defaultFilters);
+    } else if (key === "won") {
+      setFilters({ ...defaultFilters, outcomeIn: ["fully_satisfied", "partially_satisfied"], presetLabel: "Удовлетворено" });
+    } else if (key === "lost") {
+      setFilters({ ...defaultFilters, outcomeIn: ["denied", "dismissed", "returned"], presetLabel: "Отказано" });
+    } else if (key === "in_progress") {
+      setFilters({ ...defaultFilters, statusIn: ["active", "mediation", "suspended", "execution"], presetLabel: "В работе" });
+    } else if (key === "settled") {
+      setFilters({ ...defaultFilters, outcomeIn: ["settled"], presetLabel: "Медиативные соглашения" });
+    } else if (key === "high_risk") {
+      setFilters({ ...defaultFilters, riskLevelIn: ["high"], presetLabel: "Высокая значимость" });
+    } else if (key === "overdue_action") {
+      setFilters({ ...defaultFilters, caseIdIn: caseIds ?? [], presetLabel: "Просроченные действия" });
+    }
+    setActiveSection("cases");
+    setSelectedCaseId(null);
   }, []);
 
   // Filter cases based on user role
@@ -146,7 +171,7 @@ const Index = () => {
                 )}
               </div>
             </div>
-            <DashboardStats cases={dashboardCases} />
+            <DashboardStats cases={dashboardCases} onDrillDown={handleDrillDown} />
             <DashboardCharts cases={dashboardCases} />
           </>
         );
@@ -155,7 +180,32 @@ const Index = () => {
           <div>
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-lg font-semibold">Реестр судебных дел</h2>
-              <AddCaseDialog user={user} />
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  className="gap-2 border-blue-200 text-blue-700 hover:bg-blue-50"
+                  disabled={filteredCases.length === 0}
+                  onClick={() => {
+                    try {
+                      exportCasesToExcel(filteredCases);
+                      toast({
+                        title: "Файл сформирован",
+                        description: `Выгружено дел: ${filteredCases.length}.`,
+                      });
+                    } catch (e) {
+                      toast({
+                        variant: "destructive",
+                        title: "Не удалось выгрузить",
+                        description: e instanceof Error ? e.message : "Неизвестная ошибка",
+                      });
+                    }
+                  }}
+                >
+                  <FileSpreadsheet className="w-4 h-4" />
+                  Экспорт в Excel
+                </Button>
+                <AddCaseDialog user={user} />
+              </div>
             </div>
             <CasesFilterBar filters={filters} onFiltersChange={setFilters} resultCount={filteredCases.length} lawyerOptions={lawyerDirectory} />
             <div className="mt-4">
@@ -167,6 +217,9 @@ const Index = () => {
         return <NotificationsPage onCaseClick={handleCaseClick} />;
       case "counterparties":
         return <CounterpartiesPage onCaseClick={handleCaseClick} />;
+
+      case "claims":
+        return <ClaimsPage onCaseClick={handleCaseClick} />;
       case "analytics":
         return canViewAllAnalytics(user) ? <AnalyticsPage /> : (
           <div className="flex items-center justify-center h-64 text-muted-foreground">

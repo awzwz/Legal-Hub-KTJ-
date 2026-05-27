@@ -85,3 +85,18 @@
     @apply inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium;
   }
 }
+
+/* Видимый тонкий скроллбар для cmdk-списков (на macOS обычно скрыт по умолчанию). */
+[cmdk-list]::-webkit-scrollbar {
+  width: 8px;
+}
+[cmdk-list]::-webkit-scrollbar-thumb {
+  background-color: hsl(215, 16%, 75%);
+  border-radius: 4px;
+}
+[cmdk-list]::-webkit-scrollbar-thumb:hover {
+  background-color: hsl(215, 16%, 55%);
+}
+[cmdk-list]::-webkit-scrollbar-track {
+  background: transparent;
+}

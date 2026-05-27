@@ -1,6 +1,6 @@
 import { useState, useMemo } from "react";
 import { Search, Filter, X, Eye } from "lucide-react";
-import { caseStatusLabels, caseOutcomeLabels, courtInstanceLabels, caseTypeLabels, partyRoleLabels, branches, canViewAllBranches, disputeCategoryLabels, type CaseStatus, type CaseOutcome, type CourtInstance, type CaseType, type PartyRole, type DisputeCategory, type LegalCase } from "@/data/mockData";
+import { caseOutcomeLabels, courtInstanceLabels, caseTypeLabels, partyRoleLabels, branches, canViewAllBranches, disputeCategoryLabels, visibleCaseStatuses, caseStatusGroup, type CaseStatus, type CaseOutcome, type CourtInstance, type CaseType, type PartyRole, type DisputeCategory, type LegalCase } from "@/data/mockData";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { cn } from "@/lib/utils";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -20,6 +20,16 @@ export interface CaseFilters {
   overdueOnly: boolean;
   claimAmountFrom: number | "";
   claimAmountTo: number | "";
+  /** Drill-down пресеты с карточек «Обзора» — фильтр по нескольким значениям сразу.
+   *  Если заданы, имеют приоритет над одиночными outcome / status. */
+  outcomeIn?: CaseOutcome[];
+  statusIn?: CaseStatus[];
+  /** Фильтр по уровню риска (для карточки «Высокий риск»). */
+  riskLevelIn?: Array<"high" | "medium" | "low">;
+  /** Точечный фильтр по ID дел (для карточки «Просроченные действия» — список дел с просроченными дедлайнами). */
+  caseIdIn?: string[];
+  /** Заголовок-чип для UX: показывает откуда пришёл drill-down (на верхней панели фильтров). */
+  presetLabel?: string;
 }
 
 const defaultFilters: CaseFilters = {
@@ -58,6 +68,8 @@ const CasesFilterBar = ({ filters, onFiltersChange, resultCount, lawyerOptions }
     if (k === "overdueOnly") return v === true;
     if (k === "claimAmountFrom") return v !== "";
     if (k === "claimAmountTo") return v !== "";
+    if (k === "outcomeIn" || k === "statusIn" || k === "riskLevelIn" || k === "caseIdIn") return Array.isArray(v) && v.length > 0;
+    if (k === "presetLabel") return false;
     return v !== "all";
   }).length;
 
@@ -118,18 +130,33 @@ const CasesFilterBar = ({ filters, onFiltersChange, resultCount, lawyerOptions }
         <span className="text-xs text-[hsl(215,20%,45%)] ml-auto">{resultCount} дел</span>
       </div>
 
+      {filters.presetLabel && (
+        <div className="flex items-center gap-2 -mt-2">
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-blue-100 text-blue-700 text-xs font-medium border border-blue-200">
+            Из карточки: {filters.presetLabel}
+            <button
+              onClick={() => onFiltersChange(defaultFilters)}
+              className="ml-0.5 hover:text-blue-900"
+              title="Сбросить фильтр"
+            >
+              <X className="w-3 h-3" />
+            </button>
+          </span>
+        </div>
+      )}
+
       {expanded && (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 pt-4 border-t border-[hsl(215,35%,90%)] items-end">
           <div className="flex flex-col gap-1.5">
-            <label className="text-[11px] font-medium text-[hsl(215,35%,45%)] uppercase tracking-wider">Стадия дела</label>
+            <label className="text-[11px] font-medium text-[hsl(215,35%,45%)] uppercase tracking-wider">Статус дела</label>
             <Select value={filters.status} onValueChange={(v) => update({ status: v as CaseStatus | "all" })}>
               <SelectTrigger>
-                <SelectValue placeholder="Выберите стадию" />
+                <SelectValue placeholder="Выберите статус" />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">Все</SelectItem>
-                {Object.entries(caseStatusLabels).map(([v, l]) => (
-                  <SelectItem key={v} value={v}>{l}</SelectItem>
+                {visibleCaseStatuses.map(({ key, label }) => (
+                  <SelectItem key={key} value={key}>{label}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
@@ -173,15 +200,15 @@ const CasesFilterBar = ({ filters, onFiltersChange, resultCount, lawyerOptions }
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">Все</SelectItem>
-                {Object.entries(caseTypeLabels).map(([v, l]) => (
-                  <SelectItem key={v} value={v}>{l}</SelectItem>
+                {(["civil", "criminal", "administrative", "executive", "other"] as CaseType[]).map(v => (
+                  <SelectItem key={v} value={v}>{caseTypeLabels[v]}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
           </div>
 
           <div className="flex flex-col gap-1.5">
-            <label className="text-[11px] font-medium text-[hsl(215,35%,45%)] uppercase tracking-wider">Роль</label>
+            <label className="text-[11px] font-medium text-[hsl(215,35%,45%)] uppercase tracking-wider">Сторона</label>
             <Select value={filters.partyRole} onValueChange={(v) => update({ partyRole: v as PartyRole | "all" })}>
               <SelectTrigger>
                 <SelectValue placeholder="Выберите роль" />
@@ -196,22 +223,22 @@ const CasesFilterBar = ({ filters, onFiltersChange, resultCount, lawyerOptions }
           </div>
 
           <div className="flex flex-col gap-1.5">
-            <label className="text-[11px] font-medium text-[hsl(215,35%,45%)] uppercase tracking-wider">Раздел ПИР</label>
+            <label className="text-[11px] font-medium text-[hsl(215,35%,45%)] uppercase tracking-wider">Категория иска</label>
             <Select value={filters.disputeCategory} onValueChange={(v) => update({ disputeCategory: v as DisputeCategory | "all" })}>
               <SelectTrigger>
-                <SelectValue placeholder="Выберите раздел" />
+                <SelectValue placeholder="Выберите категорию" />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">Все</SelectItem>
-                {Object.entries(disputeCategoryLabels).map(([v, l]) => (
-                  <SelectItem key={v} value={v}>{l}</SelectItem>
+                {(["procurement", "transportation", "government", "labor", "other"] as DisputeCategory[]).map(v => (
+                  <SelectItem key={v} value={v}>{disputeCategoryLabels[v]}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
           </div>
 
           <div className={cn("flex flex-col gap-1.5", !canViewAll && "opacity-75")}>
-            <label className="text-[11px] font-medium text-[hsl(215,35%,45%)] uppercase tracking-wider">Филиал</label>
+            <label className="text-[11px] font-medium text-[hsl(215,35%,45%)] uppercase tracking-wider">Участник</label>
             <Select disabled={!canViewAll} value={filters.branch} onValueChange={(v) => update({ branch: v })}>
               <SelectTrigger className={cn(!canViewAll && "cursor-not-allowed bg-[hsl(220,14%,94%)] opacity-100")}>
                 {canViewAll ? <SelectValue placeholder="Выберите филиал" /> : <span className="flex items-center gap-2"><Eye className="w-3.5 h-3.5 text-[hsl(38,92%,50%)]" />Только ваш филиал</span>}
@@ -277,8 +304,21 @@ export const useFilteredCases = (filters: CaseFilters, cases?: LegalCase[]) => {
         const match = c.caseNumber.toLowerCase().includes(q) || c.company.toLowerCase().includes(q) || c.companyBIN.includes(q) || c.assignedLawyer.toLowerCase().includes(q) || c.defendant.toLowerCase().includes(q) || c.plaintiff.toLowerCase().includes(q);
         if (!match) return false;
       }
-      if (filters.status !== "all" && c.status !== filters.status) return false;
-      if (filters.outcome !== "all" && c.outcome !== filters.outcome) return false;
+      if (filters.statusIn && filters.statusIn.length > 0) {
+        if (!filters.statusIn.includes(c.status)) return false;
+      } else if (filters.status !== "all") {
+        const targetGroup = caseStatusGroup[filters.status as CaseStatus];
+        if (caseStatusGroup[c.status] !== targetGroup) return false;
+      }
+      if (filters.outcomeIn && filters.outcomeIn.length > 0) {
+        if (!filters.outcomeIn.includes(c.outcome)) return false;
+      } else if (filters.outcome !== "all" && c.outcome !== filters.outcome) return false;
+      if (filters.riskLevelIn && filters.riskLevelIn.length > 0) {
+        if (!filters.riskLevelIn.includes(c.riskLevel as "high" | "medium" | "low")) return false;
+      }
+      if (filters.caseIdIn && filters.caseIdIn.length > 0) {
+        if (!filters.caseIdIn.includes(c.id)) return false;
+      }
       if (filters.courtInstance !== "all" && c.courtInstance !== filters.courtInstance) return false;
       if (filters.caseType !== "all" && c.caseType !== filters.caseType) return false;
       if (filters.partyRole !== "all" && c.partyRole !== filters.partyRole) return false;

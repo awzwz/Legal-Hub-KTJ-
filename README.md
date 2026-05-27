@@ -23,7 +23,7 @@
 ## Структура проекта
 
 - `frontend/` — SPA (React, Vite): `frontend/src/components/`, `frontend/src/pages/`, `frontend/src/data/`, `frontend/src/hooks/`.
-- `backend/app/svc/` — точки входа **микросервисов** (Docker: отдельный `uvicorn` на домен); `app/main.py` — монолит для локальной разработки.
+- `backend/app/entrypoints/` — точки входа **микросервисов** (Docker: отдельный `uvicorn` на домен); `app/main.py` — монолит для локальной разработки.
 
 ## Запуск приложения
 
@@ -44,6 +44,16 @@
    cd frontend && npm run build
    ```
 
+### Docker Compose
+
+Полный стек из корня репозитория:
+
+```bash
+docker compose up -d --build
+```
+
+После изменений в **`frontend/`** или **`backend/`** обязательно пересобирайте образы (`--build` при `up` или отдельно `docker compose build`). Иначе контейнер `web` продолжит отдавать старый Vite-бандл, а сервисы `svc-*` — старый Python-код. Только SPA: `docker compose build web && docker compose up -d web`.
+
 ### Офлайн-демо (`VITE_FORCE_MOCK=true`)
 
 В `.env`:
@@ -55,6 +65,41 @@ VITE_FORCE_MOCK=true
 SPA не запрашивает дела с API: используется набор из `frontend/src/data/offlineMockData.ts`, переключатель пользователей — из `frontend/src/data/offlineUsers.ts`. Без этой переменной источник правды — бэкенд; при ошибке сети список дел пустой и показывается toast.
 
 Эталон для сида БД: `backend/demo/demo_dataset.json` (перегенерация: `python backend/scripts/extract_demo_json.py`, читает `frontend/src/data/offlineMockData.ts`).
+
+### Backend: переменные окружения
+
+Минимально:
+
+| Переменная | Назначение | Пример |
+| --- | --- | --- |
+| `ENV` | `dev` / `staging` / `production`. В `production` валидация настроек жёсткая. | `production` |
+| `DATABASE_URL` | Async URL Postgres. | `postgresql+asyncpg://user:pass@host/db` |
+| `IAM_DATABASE_URL` / `LEGAL_DATABASE_URL` / `WORKSPACE_DATABASE_URL` | Опционально, для разделения доменов. | пусто → используется `DATABASE_URL` |
+| `REDIS_URL` | Для blacklist refresh-токенов и кэша. | `redis://redis:6379/0` |
+| `JWT_SECRET` | Подпись JWT. **Обязателен** в проде. | `$(openssl rand -hex 32)` |
+| `INTERNAL_API_KEY` | Заголовок `X-Internal-Key` для интеграций (1С). | случайная строка |
+| `RELAX_AUTH` | dev-режим без токена. Запрещён при `ENV=production`. | `false` |
+| `AUTO_DDL` | Создавать таблицы на старте. Запрещён при `ENV=production`. | `false` |
+| `COOKIE_SECURE` / `COOKIE_SAMESITE` | Атрибуты refresh-cookie. На HTTPS-проде — `true` / `strict`. | `true` / `strict` |
+| `CORS_ORIGINS` | Список origin'ов через запятую. | `https://app.example.kz` |
+
+### Backend: миграции и запуск
+
+```bash
+cd backend
+pip install -r requirements.txt
+alembic upgrade head
+uvicorn app.main:app --reload  # монолит для dev
+```
+
+В Docker миграции выполняет отдельный сервис `migrate` (см. `docker-compose.yml`).
+
+### Backend: тесты
+
+```bash
+cd backend
+pytest -q
+```
 
 ### Relax-auth и `X-Dev-User-Email`
 

@@ -20,7 +20,7 @@ spec:
           envFrom:
             - secretRef:
                 name: legalhub-secrets
-          command: ["sh", "-c", "alembic upgrade head && uvicorn app.svc.legal:app --host 0.0.0.0 --port 8002"]
+          command: ["sh", "-c", "alembic upgrade head && uvicorn app.entrypoints.legal:app --host 0.0.0.0 --port 8002"]
           resources:
             requests:
               cpu: "250m"

@@ -12,23 +12,34 @@
 }
 
 {$LEGALHUB_DOMAIN} {
-    encode gzip zstd
-
-    # Базовые security headers — корпоративная система должна выглядеть прилично.
-    header {
-        Strict-Transport-Security "max-age=31536000; includeSubDomains"
-        X-Content-Type-Options "nosniff"
-        X-Frame-Options "DENY"
-        Referrer-Policy "strict-origin-when-cross-origin"
-        # Уберите если будете встраивать внешние iframe / шрифты.
-        Permissions-Policy "geolocation=(), microphone=(), camera=()"
+    # Ограничение по IP (переменная SITE_ALLOWED_IPS в compose, по умолчанию 0.0.0.0/0 ::/0 = все).
+    # Путь ACME не трогаем — иначе Let's Encrypt не продлит сертификат.
+    @forbidden {
+        not path /.well-known/acme-challenge*
+        not remote_ip {$SITE_ALLOWED_IPS}
     }
+    handle @forbidden {
+        respond "Forbidden" 403
+    }
+    handle {
+        encode gzip zstd
 
-    # Большие выгрузки PIR-Excel могут занимать пару минут.
-    reverse_proxy web:80 {
-        transport http {
-            response_header_timeout 120s
-            read_timeout 120s
+        # Базовые security headers — корпоративная система должна выглядеть прилично.
+        header {
+            Strict-Transport-Security "max-age=31536000; includeSubDomains"
+            X-Content-Type-Options "nosniff"
+            X-Frame-Options "DENY"
+            Referrer-Policy "strict-origin-when-cross-origin"
+            # Уберите если будете встраивать внешние iframe / шрифты.
+            Permissions-Policy "geolocation=(), microphone=(), camera=()"
+        }
+
+        # Большие выгрузки PIR-Excel могут занимать пару минут.
+        reverse_proxy web:80 {
+            transport http {
+                response_header_timeout 120s
+                read_timeout 120s
+            }
         }
     }
 }

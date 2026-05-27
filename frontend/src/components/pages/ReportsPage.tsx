@@ -15,25 +15,27 @@ import { apiAuthHeaders, apiJsonHeaders } from "@/lib/api";
 import { Badge } from "@/components/ui/badge";
 
 const reports = [
-  { id: "1", name: "Уголовные", description: "Реестр уголовных дел с детализацией" },
-  { id: "2", name: "Административные", description: "Реестр административных дел с детализацией" },
-  { id: "3", name: "Гражданские", description: "Реестр гражданских дел с детализацией" },
-  { id: "4", name: "Исполнительные производства", description: "Дела на стадии исполнительного производства" },
   {
-    id: "5",
-    name: "Претензионно-исковая работа",
+    id: "1",
+    name: "Отчёт по уголовным делам",
     description:
-      "Претензии, иски, суммы требований и оплат. Мгновенная Excel-выгрузка по шаблону ПИР — в карточке «ПИР (образец КТЖ)»; здесь можно оформить заявку на сводный отчёт (файл позже).",
+      "Сводный реестр уголовных дел в разрезе процессуального статуса организации, стадии расследования и итогов рассмотрения за отчётный период.",
+  },
+  {
+    id: "2",
+    name: "Отчёт по делам об административных правонарушениях",
+    description:
+      "Реестр административных производств с указанием уполномоченного органа, предмета правонарушения, применённого взыскания и статуса исполнения.",
   },
 ] as const;
 
-function initialMonthRange(): DateRange {
+function initialYearRange(): DateRange {
   const now = new Date();
-  return { from: startOfMonth(now), to: endOfMonth(now) };
+  return { from: startOfYear(now), to: endOfYear(now) };
 }
 
 export default function ReportsPage() {
-  const [date, setDate] = useState<DateRange | undefined>(initialMonthRange);
+  const [date, setDate] = useState<DateRange | undefined>(initialYearRange);
   const reportRequestMutation = useMutation({
     mutationFn: async (vars: { reportType: string; dateFrom: string; dateTo: string; label: string }) => {
       const res = await fetch("/api/v1/reports/requests", {
@@ -122,7 +124,8 @@ export default function ReportsPage() {
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `PIR_${vars.dateFrom}_${vars.dateTo}.xlsx`;
+      const fmtRu = (s: string) => s.split("-").reverse().join(".");
+      a.download = `Отчёт ПИР ${fmtRu(vars.dateFrom)} — ${fmtRu(vars.dateTo)}.xlsx`;
       a.rel = "noopener";
       document.body.appendChild(a);
       a.click();
@@ -158,6 +161,15 @@ export default function ReportsPage() {
     }
   };
 
+  /** Установить период по конкретному кварталу текущего года (q ∈ {1,2,3,4}). */
+  const setQuarter = (q: 1 | 2 | 3 | 4) => {
+    const y = new Date().getFullYear();
+    const startMonth = (q - 1) * 3; // 0,3,6,9
+    const from = new Date(y, startMonth, 1);
+    const to = new Date(y, startMonth + 3, 0); // последний день квартала
+    setDate({ from, to });
+  };
+
   const handleDownload = (name: string, reportId: string) => {
     if (!date?.from) return;
     const dateFrom = format(date.from, "yyyy-MM-dd");
@@ -180,17 +192,7 @@ export default function ReportsPage() {
       <div className="flex flex-col gap-4 mb-4">
         <div>
           <h2 className="text-xl font-semibold text-[hsl(215,35%,15%)]">Отчёты</h2>
-          <span className="text-sm text-muted-foreground">
-            Мгновенная выгрузка Excel — кнопка{" "}
-            <span className="font-medium text-blue-800">«Скачать ПИР (Excel)»</span> на карточке «ПИР (образец КТЖ)».
-            Остальные карточки оформляют заявку; файл придёт позже, когда появится генератор.
-          </span>
-          <p className="text-sm text-amber-900/90 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mt-2">
-            В файл ПИР попадают дела, у которых{" "}
-            <span className="font-semibold">дата подачи иска</span> входит в выбранный период. Если дело только что
-            завели в системе, по умолчанию у него дата подачи — сегодня: включите в календарь текущий месяц (или
-            нужный диапазон), иначе выгрузка будет без этого дела.
-          </p>
+          <span className="text-sm text-muted-foreground">Мгновенная выгрузка Excel.</span>
         </div>
 
         {/* Date Selection Control */}
@@ -238,29 +240,44 @@ export default function ReportsPage() {
               </PopoverContent>
             </Popover>
 
-            <div className="flex gap-2">
-              <Badge 
-                variant="secondary" 
+            <div className="flex gap-2 flex-wrap">
+              <Badge
+                variant="secondary"
                 className="cursor-pointer hover:bg-blue-100 transition-colors py-1.5 px-3 bg-blue-50 text-blue-700 border border-blue-200"
                 onClick={() => setPreset("month")}
               >
                 Текущий месяц
               </Badge>
-              <Badge 
-                variant="secondary" 
+              <Badge
+                variant="secondary"
                 className="cursor-pointer hover:bg-blue-100 transition-colors py-1.5 px-3 bg-blue-50 text-blue-700 border border-blue-200"
                 onClick={() => setPreset("quarter")}
               >
                 Текущий квартал
               </Badge>
-              <Badge 
-                variant="secondary" 
+              <Badge
+                variant="secondary"
                 className="cursor-pointer hover:bg-blue-100 transition-colors py-1.5 px-3 bg-blue-50 text-blue-700 border border-blue-200"
                 onClick={() => setPreset("year")}
               >
                 С начала года
               </Badge>
             </div>
+          </div>
+
+          {/* Конкретные кварталы текущего года */}
+          <div className="flex items-center gap-2 flex-wrap pt-1">
+            <span className="text-xs text-muted-foreground uppercase tracking-wider">Кварталы {new Date().getFullYear()}:</span>
+            {([1, 2, 3, 4] as const).map((q) => (
+              <Badge
+                key={q}
+                variant="secondary"
+                className="cursor-pointer hover:bg-blue-100 transition-colors py-1.5 px-3 bg-white text-blue-700 border border-blue-200"
+                onClick={() => setQuarter(q)}
+              >
+                {q} квартал
+              </Badge>
+            ))}
           </div>
         </div>
       </div>
@@ -277,11 +294,12 @@ export default function ReportsPage() {
               <div className="p-2 rounded-lg bg-blue-100">
                 <FileSpreadsheet className="w-5 h-5 text-blue-700" />
               </div>
-              <h3 className="text-sm font-bold text-blue-900">ПИР (образец КТЖ)</h3>
+              <h3 className="text-sm font-bold text-blue-900">Отчёт по претензионно-исковой работе</h3>
             </div>
             <p className="text-xs text-blue-600 mt-2">
-              Синхронная выгрузка Excel по официальному шаблону: листы истец / ответчик / третье лицо, исполнительное
-              производство и дебиторка из базы за выбранный период.
+              Сводный реестр судебных дел за отчётный период по утверждённой форме АО «Пассажирские перевозки»:
+              позиции истца, ответчика и третьего лица в разрезе категорий споров, с автоматическим расчётом
+              удовлетворённых, отклонённых и медиативно урегулированных требований.
             </p>
           </div>
           <div className="mt-5">
@@ -320,7 +338,8 @@ export default function ReportsPage() {
           </div>
         </motion.div>
 
-        {reports.map((r, i) => {
+        {/* Временно скрыты: уголовные дела и адм. правонарушения (id 1, 2). Вернуть — уберите .filter */}
+        {reports.filter((r) => r.id !== "1" && r.id !== "2").map((r, i) => {
           const thisRequestPending =
             reportRequestMutation.isPending &&
             reportRequestMutation.variables?.reportType === `r${r.id}`;

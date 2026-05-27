@@ -6,7 +6,7 @@
 
 | Переменная | Назначение |
 |------------|------------|
-| `IAM_DATABASE_URL` | Отдельная БД для `app.svc.iam` (пользователи, refresh). Включите `bootstrap_iam_tables` + сид через `app.services.iam_seed`. |
+| `IAM_DATABASE_URL` | Отдельная БД для `app.entrypoints.iam` (пользователи, refresh). Включите `bootstrap_iam_tables` + сид через `app.domain.iam_seed`. |
 | `WORKSPACE_DATABASE_URL` | Отдельная БД для уведомлений/аудита; используйте `app.db.workspace_session.get_workspace_db` в роутерах после переноса таблиц. |
 | `LEGAL_DATABASE_URL` | Отдельная БД дел; `app.db.legal_read_session.get_legal_db` для read-модели / реплики. |
 

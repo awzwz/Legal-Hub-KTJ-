@@ -62,7 +62,7 @@ services:
       context: ../../backend
       dockerfile: Dockerfile
     restart: unless-stopped
-    command: ["uvicorn", "app.svc.iam:app", "--host", "0.0.0.0", "--port", "8001"]
+    command: ["uvicorn", "app.entrypoints.iam:app", "--host", "0.0.0.0", "--port", "8001"]
     environment: *api_env
     depends_on:
       db: { condition: service_healthy }
@@ -76,7 +76,7 @@ services:
       context: ../../backend
       dockerfile: Dockerfile
     restart: unless-stopped
-    command: ["uvicorn", "app.svc.legal:app", "--host", "0.0.0.0", "--port", "8002"]
+    command: ["uvicorn", "app.entrypoints.legal:app", "--host", "0.0.0.0", "--port", "8002"]
     environment: *api_env
     depends_on:
       db: { condition: service_healthy }
@@ -90,7 +90,7 @@ services:
       context: ../../backend
       dockerfile: Dockerfile
     restart: unless-stopped
-    command: ["uvicorn", "app.svc.workspace:app", "--host", "0.0.0.0", "--port", "8003"]
+    command: ["uvicorn", "app.entrypoints.workspace:app", "--host", "0.0.0.0", "--port", "8003"]
     environment: *api_env
     depends_on:
       db: { condition: service_healthy }
@@ -104,7 +104,7 @@ services:
       context: ../../backend
       dockerfile: Dockerfile
     restart: unless-stopped
-    command: ["uvicorn", "app.svc.reporting:app", "--host", "0.0.0.0", "--port", "8004"]
+    command: ["uvicorn", "app.entrypoints.reporting:app", "--host", "0.0.0.0", "--port", "8004"]
     environment: *api_env
     depends_on:
       db: { condition: service_healthy }
@@ -135,6 +135,9 @@ services:
     environment:
       LEGALHUB_DOMAIN: ${LEGALHUB_DOMAIN}
       LETS_ENCRYPT_EMAIL: ${LETS_ENCRYPT_EMAIL}
+      # Пробел-разделённый список IP/CIDR (см. Caddyfile). По умолчанию — весь интернет.
+      # Пример только ваш офис: SITE_ALLOWED_IPS=203.0.113.5/32 2001:db8::1/128
+      SITE_ALLOWED_IPS: "${SITE_ALLOWED_IPS:-0.0.0.0/0 ::/0}"
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - /opt/legalhub/caddy_data:/data

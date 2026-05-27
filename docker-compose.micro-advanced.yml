@@ -9,4 +9,4 @@ services:
     environment:
       DATABASE_URL: postgresql+asyncpg://legalhub:legalhub@db:5432/legalhub_iam
       IAM_DATABASE_URL: postgresql+asyncpg://legalhub:legalhub@db:5432/legalhub_iam
-    command: ["sh", "-c", "uvicorn app.svc.iam:app --host 0.0.0.0 --port 8001"]
+    command: ["sh", "-c", "uvicorn app.entrypoints.iam:app --host 0.0.0.0 --port 8001"]

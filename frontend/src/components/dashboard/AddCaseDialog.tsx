@@ -37,6 +37,9 @@ import {
 } from "@/data/mockData";
 import { toast } from "@/hooks/use-toast";
 import { apiJsonHeaders } from "@/lib/api";
+import { validateBinFormat, checkBinOnline, type BinCheckResult } from "@/lib/binValidation";
+import { CheckCircle2, AlertTriangle, Loader2 } from "lucide-react";
+import { CourtCombobox } from "@/components/ui/court-combobox";
 
 const riskLabels = { low: "Низкий", medium: "Средний", high: "Высокий" } as const;
 
@@ -76,20 +79,55 @@ const formSchema = z.object({
     if (!data.companyName?.trim()) {
       ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["companyName"], message: "Обязательное поле" });
     }
-    if (!data.bin || !/^\d{12}$/.test(data.bin)) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["bin"], message: "Ровно 12 цифр" });
+    const binCheck = validateBinFormat(data.bin);
+    if (!binCheck.ok) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["bin"], message: binCheck.error || "Неверный БИН" });
     }
   } else {
     if (!data.fullName?.trim()) {
       ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["fullName"], message: "Обязательное поле" });
     }
-    if (!data.iin || !/^\d{12}$/.test(data.iin)) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["iin"], message: "Ровно 12 цифр" });
+    const iinCheck = validateBinFormat(data.iin);
+    if (!iinCheck.ok) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["iin"], message: iinCheck.error || "Неверный ИИН" });
     }
   }
 });
 
 type CaseFormValues = z.infer<typeof formSchema>;
+
+function BinCheckBanner({ value, onAutofill }: { value: string | undefined; onAutofill: (name: string) => void }) {
+  const [state, setState] = useState<"idle" | "checking" | BinCheckResult>("idle");
+  useEffect(() => {
+    const digits = (value || "").replace(/\D/g, "");
+    if (digits.length !== 12) { setState("idle"); return; }
+    const fmt = validateBinFormat(digits);
+    if (!fmt.ok) { setState("idle"); return; }
+    setState("checking");
+    const t = setTimeout(async () => {
+      const r = await checkBinOnline(digits);
+      if (r) setState(r); else setState("idle");
+    }, 500);
+    return () => clearTimeout(t);
+  }, [value]);
+  if (state === "idle") return null;
+  if (state === "checking") {
+    return <p className="text-xs text-muted-foreground flex items-center gap-1.5 mt-1"><Loader2 className="w-3 h-3 animate-spin" /> Проверяем БИН онлайн…</p>;
+  }
+  const r = state;
+  if (r.online_status === "found") {
+    return (
+      <div className="text-xs mt-1 flex items-center justify-between gap-2 bg-green-50 border border-green-200 px-2 py-1 rounded">
+        <span className="flex items-center gap-1.5 text-green-700 truncate"><CheckCircle2 className="w-3.5 h-3.5 flex-shrink-0" /> Найдено: {r.company_name}</span>
+        {r.company_name && <button type="button" className="text-[10px] text-blue-600 hover:underline flex-shrink-0" onClick={() => onAutofill(r.company_name!)}>Подставить название</button>}
+      </div>
+    );
+  }
+  if (r.online_status === "not_found") {
+    return <p className="text-xs text-amber-700 flex items-center gap-1.5 mt-1 bg-amber-50 border border-amber-200 px-2 py-1 rounded"><AlertTriangle className="w-3.5 h-3.5" /> БИН не найден в публичном реестре — но вы можете продолжить.</p>;
+  }
+  return <p className="text-xs text-muted-foreground flex items-center gap-1.5 mt-1"><AlertTriangle className="w-3.5 h-3.5" /> Не удалось проверить онлайн.</p>;
+}
 
 const AddCaseDialog = ({ user }: { user: User }) => {
   const [open, setOpen] = useState(false);
@@ -261,7 +299,13 @@ const AddCaseDialog = ({ user }: { user: User }) => {
                 <FormField control={form.control} name="court" render={({ field }) => (
                   <FormItem>
                     <FormLabel>Наименование суда</FormLabel>
-                    <FormControl><Input placeholder="СМЭС г. Астана" {...field} /></FormControl>
+                    <FormControl>
+                      <CourtCombobox
+                        value={field.value || ""}
+                        onChange={field.onChange}
+                        placeholder="Выберите или введите суд"
+                      />
+                    </FormControl>
                     <FormMessage />
                   </FormItem>
                 )} />
@@ -311,7 +355,7 @@ const AddCaseDialog = ({ user }: { user: User }) => {
                 )} />
                 <FormField control={form.control} name="branch" render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Филиал</FormLabel>
+                    <FormLabel>Участник</FormLabel>
                     <Select onValueChange={field.onChange} defaultValue={field.value} disabled={!canSelectBranch}>
                       <FormControl>
                         <SelectTrigger className={cn(!canSelectBranch && "bg-[hsl(220,14%,96%)] text-muted-foreground opacity-100")}>
@@ -350,9 +394,6 @@ const AddCaseDialog = ({ user }: { user: User }) => {
                         <Calendar mode="single" selected={field.value} onSelect={field.onChange} locale={ru} initialFocus />
                       </PopoverContent>
                     </Popover>
-                    <p className="text-xs text-muted-foreground pt-1">
-                      В выгрузку ПИР попадают дела с этой датой в выбранном на странице «Отчёты» периоде.
-                    </p>
                     <FormMessage />
                   </FormItem>
                 )} />
@@ -367,7 +408,7 @@ const AddCaseDialog = ({ user }: { user: User }) => {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <FormField control={form.control} name="partyRole" render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Роль КТЖ</FormLabel>
+                    <FormLabel>Общество</FormLabel>
                     <Select onValueChange={field.onChange} defaultValue={field.value}>
                       <FormControl><SelectTrigger><SelectValue placeholder="Выберите" /></SelectTrigger></FormControl>
                       <SelectContent>
@@ -419,7 +460,7 @@ const AddCaseDialog = ({ user }: { user: User }) => {
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-[hsl(220,14%,98%)] p-4 rounded-lg border border-[hsl(215,35%,90%)]">
                   <FormField control={form.control} name="companyName" render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Наименование компании</FormLabel>
+                      <FormLabel>Наименование организации</FormLabel>
                       <FormControl><Input placeholder="ТОО «Пример»" {...field} /></FormControl>
                       <FormMessage />
                     </FormItem>
@@ -428,6 +469,7 @@ const AddCaseDialog = ({ user }: { user: User }) => {
                     <FormItem>
                       <FormLabel>БИН (12 цифр)</FormLabel>
                       <FormControl><Input placeholder="123456789012" maxLength={12} {...field} /></FormControl>
+                      <BinCheckBanner value={field.value} onAutofill={(name) => form.setValue("companyName", name)} />
                       <FormMessage />
                     </FormItem>
                   )} />
@@ -445,6 +487,7 @@ const AddCaseDialog = ({ user }: { user: User }) => {
                     <FormItem>
                       <FormLabel>ИИН (12 цифр)</FormLabel>
                       <FormControl><Input placeholder="123456789012" maxLength={12} {...field} /></FormControl>
+                      <BinCheckBanner value={field.value} onAutofill={() => undefined} />
                       <FormMessage />
                     </FormItem>
                   )} />
@@ -458,24 +501,6 @@ const AddCaseDialog = ({ user }: { user: User }) => {
             <div className="space-y-4">
               <h3 className="text-sm font-semibold uppercase tracking-wider text-[hsl(215,35%,45%)]">3. Финансовый блок</h3>
               <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
-                <FormField control={form.control} name="claimAmount" render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Сумма иска (₸)</FormLabel>
-                    <FormControl>
-                      <MoneyAmountInput value={field.value} onChange={field.onChange} onBlur={field.onBlur} name={field.name} ref={field.ref} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )} />
-                <FormField control={form.control} name="paidAmount" render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Оплачено (₸)</FormLabel>
-                    <FormControl>
-                      <MoneyAmountInput value={field.value} onChange={field.onChange} onBlur={field.onBlur} name={field.name} ref={field.ref} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )} />
                 <FormField control={form.control} name="mainDebt" render={({ field }) => (
                   <FormItem>
                     <FormLabel>Основной долг (₸)</FormLabel>
@@ -512,15 +537,6 @@ const AddCaseDialog = ({ user }: { user: User }) => {
                     <FormMessage />
                   </FormItem>
                 )} />
-                <FormField control={form.control} name="otherCosts" render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Прочие издержки (₸)</FormLabel>
-                    <FormControl>
-                      <MoneyAmountInput value={field.value} onChange={field.onChange} onBlur={field.onBlur} name={field.name} ref={field.ref} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )} />
               </div>
             </div>
 
@@ -532,13 +548,12 @@ const AddCaseDialog = ({ user }: { user: User }) => {
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                 <FormField control={form.control} name="status" render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Статус</FormLabel>
+                    <FormLabel>Статус дела</FormLabel>
                     <Select onValueChange={field.onChange} defaultValue={field.value}>
                       <FormControl><SelectTrigger><SelectValue placeholder="Выберите" /></SelectTrigger></FormControl>
                       <SelectContent>
-                        {Object.entries(caseStatusLabels).map(([k, v]) => (
-                          <SelectItem key={k} value={k}>{v}</SelectItem>
-                        ))}
+                        <SelectItem value="active">В работе</SelectItem>
+                        <SelectItem value="execution">Исполнено</SelectItem>
                       </SelectContent>
                     </Select>
                     <FormMessage />
@@ -547,7 +562,7 @@ const AddCaseDialog = ({ user }: { user: User }) => {
                 
                 <FormField control={form.control} name="riskLevel" render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Уровень риска</FormLabel>
+                    <FormLabel>Уровень значимости</FormLabel>
                     <Select onValueChange={field.onChange} defaultValue={field.value}>
                       <FormControl>
                         <SelectTrigger className={cn(

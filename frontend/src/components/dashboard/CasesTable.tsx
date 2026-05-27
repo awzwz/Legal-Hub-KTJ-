@@ -5,13 +5,9 @@ import { motion } from "framer-motion";
 
 const statusStyles: Record<string, string> = {
   active: "bg-blue-100 text-blue-700 border border-blue-200",
-  mediation: "bg-amber-100 text-amber-800 border border-amber-200",
-  suspended: "bg-slate-100 text-slate-700 border border-slate-200",
-  won: "bg-green-100 text-green-700 border border-green-200",
-  lost: "bg-red-100 text-red-700 border border-red-200",
-  appeal: "bg-gray-100 text-gray-600 border border-gray-200",
-  cassation: "bg-gray-100 text-gray-600 border border-gray-200",
-  execution: "bg-indigo-100 text-indigo-800 border border-indigo-200",
+  mediation: "bg-blue-100 text-blue-700 border border-blue-200",
+  suspended: "bg-blue-100 text-blue-700 border border-blue-200",
+  execution: "bg-green-100 text-green-700 border border-green-200",
   closed: "bg-green-100 text-green-700 border border-green-200",
 };
 
@@ -39,6 +35,9 @@ interface CasesTableProps {
   cases?: LegalCase[];
 }
 
+const getCounterparty = (c: LegalCase) =>
+  c.partyRole === "defendant" ? c.plaintiff : c.defendant;
+
 const CasesTable = ({ onCaseClick, cases }: CasesTableProps) => {
   const displayCases = cases ?? [];
   const overdueCases = displayCases.filter(c => c.daysOverdue > 0);
@@ -59,7 +58,7 @@ const CasesTable = ({ onCaseClick, cases }: CasesTableProps) => {
                 onClick={() => onCaseClick?.(c.id)}
               >
                 <p className="text-blue-600 group-hover:text-blue-800 transition-colors truncate">
-                  <span className="font-medium text-blue-900">{c.caseNumber}</span> — {c.defendant} — <span className="text-red-600 font-medium">{c.daysOverdue} дн. просрочки</span>
+                  <span className="font-medium text-blue-900">{c.caseNumber}</span> — {getCounterparty(c)} — <span className="text-red-600 font-medium">{c.daysOverdue} дн. просрочки</span>
                   {c.paymentDeadline && <span className="text-blue-500"> (срок: {c.paymentDeadline})</span>}
                 </p>
                 <span className="inline-flex items-center gap-1 text-[11px] font-medium text-red-700 bg-white border border-red-200 px-2 py-0.5 rounded-md shrink-0">
@@ -78,16 +77,16 @@ const CasesTable = ({ onCaseClick, cases }: CasesTableProps) => {
             <thead>
               <tr className="border-b border-blue-100 bg-blue-50/50">
                 <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-blue-700">№ дела</th>
-                <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-blue-700">Ответчик</th>
+                <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-blue-700">Контрагент</th>
                 <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-blue-700">Тип</th>
-                <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-blue-700">Роль</th>
+                <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-blue-700">Сторона</th>
                 <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-blue-700">Статус</th>
                 <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-blue-700">Инстанция</th>
                 <th className="text-right px-4 py-3 text-xs font-semibold uppercase tracking-wider text-blue-700">Сумма иска</th>
-                <th className="text-right px-4 py-3 text-xs font-semibold uppercase tracking-wider text-blue-700">Оплачено</th>
+                <th className="text-right px-4 py-3 text-xs font-semibold uppercase tracking-wider text-blue-700">Взыскано</th>
                 <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-blue-700">Юрист</th>
                 <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-blue-700">Филиал</th>
-                <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-blue-700">Риск</th>
+                <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-blue-700">Значимость</th>
                 <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-blue-700">Просрочка</th>
               </tr>
             </thead>
@@ -111,8 +110,8 @@ const CasesTable = ({ onCaseClick, cases }: CasesTableProps) => {
                     </div>
                   </td>
                   <td className="px-4 py-3">
-                    <p className="font-medium truncate max-w-[220px] text-blue-900" title={c.defendant}>
-                      {c.defendant}
+                    <p className="font-medium truncate max-w-[220px] text-blue-900" title={getCounterparty(c)}>
+                      {getCounterparty(c)}
                     </p>
                   </td>
                   <td className="px-4 py-3 text-xs">{caseTypeAbbr[c.caseType] ?? c.caseType}</td>

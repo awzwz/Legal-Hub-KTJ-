@@ -1,6 +1,8 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { KeyRound, UserPlus, Users, ShieldCheck, ShieldOff, Loader2 } from "lucide-react";
+import { KeyRound, UserPlus, Users, ShieldCheck, ShieldOff, Loader2, DollarSign } from "lucide-react";
+import { useEbitda, useSetEbitda } from "@/hooks/useKpi";
+import { formatAmountShort } from "@/data/mockData";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -420,9 +422,95 @@ function UsersAdminCard() {
   );
 }
 
+/** Карточка редактирования годовой EBITDA для расчёта KPI-2. */
+function EbitdaSettingsCard() {
+  const [year, setYear] = useState<number>(new Date().getFullYear());
+  const { data: current } = useEbitda(year);
+  const mutation = useSetEbitda();
+  const [draft, setDraft] = useState<string>("");
+  const [touched, setTouched] = useState(false);
+
+  // Синхронизация input ↔ серверного значения при смене года.
+  useEffect(() => {
+    if (!touched) setDraft(current?.ebitda != null ? String(current.ebitda) : "");
+  }, [current?.ebitda, touched]);
+
+  const handleSave = async () => {
+    const n = Number(String(draft).replace(/\s/g, "").replace(",", "."));
+    if (!isFinite(n) || n <= 0) {
+      toast({ variant: "destructive", title: "Введите положительное число" });
+      return;
+    }
+    try {
+      await mutation.mutateAsync({ year, ebitda: n });
+      setTouched(false);
+      toast({ title: "EBITDA сохранена", description: `На ${year} год: ${formatAmountShort(n)}` });
+    } catch (e) {
+      toast({ variant: "destructive", title: "Ошибка", description: String((e as Error).message) });
+    }
+  };
+
+  const years = Array.from({ length: 5 }, (_, i) => new Date().getFullYear() - 1 + i);
+
+  return (
+    <div className="space-y-4 rounded-xl border border-blue-100 bg-white p-5 max-w-2xl">
+      <div className="flex items-center gap-2">
+        <div className="p-2 rounded-md bg-blue-100 text-blue-700">
+          <DollarSign className="w-4 h-4" />
+        </div>
+        <div>
+          <h3 className="text-base font-semibold text-blue-900">Годовая EBITDA</h3>
+          <p className="text-xs text-blue-500 mt-0.5">
+            Используется для расчёта KPI-2 (% от EBITDA по проигранным как ответчик).
+            Цифру предоставляет бухгалтерия в начале года.
+          </p>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-[120px_1fr_auto] gap-3 items-end">
+        <div>
+          <Label className="text-xs text-blue-600">Год</Label>
+          <Select value={String(year)} onValueChange={(v) => { setYear(Number(v)); setTouched(false); }}>
+            <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              {years.map((y) => <SelectItem key={y} value={String(y)}>{y}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        </div>
+        <div>
+          <Label className="text-xs text-blue-600">EBITDA (₸)</Label>
+          <Input
+            value={draft}
+            onChange={(e) => { setDraft(e.target.value); setTouched(true); }}
+            placeholder="например: 100 000 000 000"
+            className="mt-1"
+          />
+        </div>
+        <Button onClick={handleSave} disabled={mutation.isPending} className="h-10">
+          {mutation.isPending && <Loader2 className="w-3 h-3 animate-spin mr-1" />}
+          Сохранить
+        </Button>
+      </div>
+
+      {current?.ebitda != null && (
+        <p className="text-xs text-muted-foreground border-t pt-3">
+          Текущее значение на {year}: <span className="font-semibold text-blue-900">{formatAmountShort(current.ebitda)}</span>
+        </p>
+      )}
+      {current?.ebitda == null && (
+        <p className="text-xs text-amber-700 border-t pt-3">
+          ⚠ На {year} год EBITDA не задана — KPI-2 на дашборде показывает «—».
+        </p>
+      )}
+    </div>
+  );
+}
+
 const SettingsPage = () => {
   const { user } = useCurrentUser();
   const isAdmin = canManageUsers(user);
+  // Финансовые показатели может править только director/chief_lawyer
+  const canEditEbitda = user.role === "director" || user.role === "chief_lawyer";
 
   return (
     <div className="space-y-6">
@@ -435,6 +523,7 @@ const SettingsPage = () => {
         <TabsList>
           <TabsTrigger value="profile">Профиль</TabsTrigger>
           {isAdmin && <TabsTrigger value="users">Пользователи</TabsTrigger>}
+          {canEditEbitda && <TabsTrigger value="finance">Финансовые показатели</TabsTrigger>}
         </TabsList>
         <TabsContent value="profile" className="mt-4">
           <ChangePasswordCard />
@@ -442,6 +531,11 @@ const SettingsPage = () => {
         {isAdmin && (
           <TabsContent value="users" className="mt-4">
             <UsersAdminCard />
+          </TabsContent>
+        )}
+        {canEditEbitda && (
+          <TabsContent value="finance" className="mt-4">
+            <EbitdaSettingsCard />
           </TabsContent>
         )}
       </Tabs>

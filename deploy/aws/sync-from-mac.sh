@@ -35,7 +35,7 @@ ssh -i "$KEY" -o StrictHostKeyChecking=accept-new -o ConnectTimeout=15 "ec2-user
   "sudo mkdir -p /opt/legalhub && sudo chown ec2-user:ec2-user /opt/legalhub && mkdir -p /opt/legalhub/app"
 
 # Синхронизация (без тяжёлых артефактов; без секретов с машины)
-rsync -avz --info=progress2 \
+rsync -avz --progress \
   --exclude node_modules \
   --exclude frontend/node_modules \
   --exclude backend/.venv \

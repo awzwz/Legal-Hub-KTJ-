@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Annotated
+from typing import Annotated, Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -9,10 +9,14 @@ from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import get_current_user
+from app.core.permissions import require_role
+from app.core.roles import Role
 from app.db.iam_session import get_identity_db
 from app.models import User
 from app.schemas.auth import CreateUserBody
-from app.services import audit_write, user_service
+from app.domain import audit_write, user_handover_service, user_service
+
+LeadershipUser = Annotated[User, Depends(require_role(Role.DIRECTOR, Role.CHIEF_LAWYER))]
 
 router = APIRouter(prefix="/users", tags=["users"])
 
@@ -29,10 +33,8 @@ async def list_users(
 @router.get("/all", summary="All users (admin: directory + статусы)")
 async def list_users_all(
     db: Annotated[AsyncSession, Depends(get_identity_db)],
-    user: Annotated[User, Depends(get_current_user)],
+    user: LeadershipUser,
 ):
-    if user.role not in ("director", "chief_lawyer"):
-        raise HTTPException(status_code=403, detail="Доступ только директору / главному юристу")
     rows = await user_service.list_all_users(db)
     return JSONResponse(rows)
 
@@ -85,4 +87,38 @@ async def toggle_user_active(
         details=f"Пользователь {'активирован' if body.is_active else 'деактивирован'}",
     )
     await db.commit()
+    return JSONResponse(out)
+
+
+@router.get("/{user_id}/cases", summary="List cases assigned to user (для UI передачи дел)")
+async def list_user_cases(
+    user_id: UUID,
+    db: Annotated[AsyncSession, Depends(get_identity_db)],
+    user: LeadershipUser,
+):
+    rows = await user_handover_service.get_user_cases_summary(db, user_id)
+    return JSONResponse(rows)
+
+
+class _HandoverBody(BaseModel):
+    target_user_id: UUID
+    case_ids: Optional[list[UUID]] = None  # None → передать все активные дела
+    deactivate: bool = False
+
+
+@router.post("/{user_id}/handover", summary="Передача дел от увольняющегося юриста")
+async def handover_user_cases(
+    user_id: UUID,
+    body: _HandoverBody,
+    db: Annotated[AsyncSession, Depends(get_identity_db)],
+    user: Annotated[User, Depends(get_current_user)],
+):
+    out = await user_handover_service.handover_cases(
+        db,
+        user,
+        leaving_user_id=user_id,
+        target_user_id=body.target_user_id,
+        case_ids=body.case_ids,
+        deactivate=body.deactivate,
+    )
     return JSONResponse(out)

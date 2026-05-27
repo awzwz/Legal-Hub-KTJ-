@@ -12,9 +12,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY alembic.ini .
 COPY alembic ./alembic
 COPY app ./app
-# Демо-набор для seed (app/services/demo_seed.py → /app/demo/demo_dataset.json)
+# Демо-набор для seed (app/domain/demo_seed.py → /app/demo/demo_dataset.json)
 COPY demo ./demo
-# PIR Excel template (see app/services/pir_excel_fill.py → /app/templates/...)
+# PIR Excel template (see app/domain/pir_excel_fill.py → /app/templates/...)
 COPY templates ./templates
 COPY scripts ./scripts
 

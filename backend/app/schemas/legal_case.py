@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Optional
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.schemas.case_extensions import (
     CaseLitigationOut,
@@ -11,6 +11,18 @@ from app.schemas.case_extensions import (
     EnforcementProceedingOut,
 )
 from app.schemas.common import CamelModel
+from app.utils.bin_validator import is_valid_bin_checksum
+
+
+def _normalize_and_validate_bin(value: str | None) -> str:
+    if value is None:
+        return value
+    digits = "".join(c for c in str(value) if c.isdigit())
+    if len(digits) != 12:
+        raise ValueError("БИН/ИИН должен содержать ровно 12 цифр")
+    if not is_valid_bin_checksum(digits):
+        raise ValueError("Неверная контрольная сумма БИН/ИИН")
+    return digits
 
 
 class PaymentOut(CamelModel):
@@ -148,6 +160,11 @@ class CreateLegalCaseBody(CamelModel):
     last_updated: Optional[str] = None
     risk_level: str
 
+    @field_validator("company_bin")
+    @classmethod
+    def _check_bin(cls, v: str) -> str:
+        return _normalize_and_validate_bin(v)
+
 
 class PatchCaseBody(CamelModel):
     status: Optional[str] = None
@@ -183,6 +200,13 @@ class PatchCaseBody(CamelModel):
     recovered_state_fee: Optional[float] = Field(default=None, validation_alias="recoveredStateFee")
     recovered_rep_expenses: Optional[float] = Field(default=None, validation_alias="recoveredRepExpenses")
     dispute_category: Optional[str] = Field(default=None, validation_alias="disputeCategory")
+
+    @field_validator("company_bin")
+    @classmethod
+    def _check_bin(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return v
+        return _normalize_and_validate_bin(v)
 
 
 class CreateCommentBody(CamelModel):
