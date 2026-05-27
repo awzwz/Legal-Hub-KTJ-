@@ -13,7 +13,7 @@ from typing import Annotated
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, Query
 
 from app.core.deps import get_current_user
 from app.models import User

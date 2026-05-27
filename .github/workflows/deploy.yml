@@ -1,0 +1,96 @@
+name: Deploy to AWS
+
+# CD на EC2 (44.193.238.2):
+#   1. Берём свежий код после успешного прохождения CI.
+#   2. Синхронизируем по SSH в /opt/legalhub/app на EC2 (rsync, без .git).
+#   3. Перезапускаем docker compose из deploy/aws/docker-compose.prod.yml.
+#
+# Требует секретов в репо (Settings → Secrets and variables → Actions):
+#   - EC2_HOST     :  44.193.238.2
+#   - EC2_USER     :  ec2-user
+#   - EC2_SSH_KEY  :  содержимое legalhub.pem (включая BEGIN/END строки)
+#   - EC2_APP_DIR  :  /opt/legalhub/app   (опционально, default: /opt/legalhub/app)
+#
+# Файл deploy/aws/.env.prod на сервере не перетирается (его нет в репо).
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-prod
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Sync & restart on EC2
+    runs-on: ubuntu-latest
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+
+    env:
+      EC2_HOST: ${{ secrets.EC2_HOST }}
+      EC2_USER: ${{ secrets.EC2_USER || 'ec2-user' }}
+      EC2_APP_DIR: ${{ secrets.EC2_APP_DIR || '/opt/legalhub/app' }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup SSH key
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/legalhub.pem
+          chmod 600 ~/.ssh/legalhub.pem
+          ssh-keyscan -H "$EC2_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+
+      - name: Ensure remote dir
+        run: |
+          ssh -i ~/.ssh/legalhub.pem "$EC2_USER@$EC2_HOST" \
+            "sudo mkdir -p '$EC2_APP_DIR' && sudo chown $EC2_USER:$EC2_USER '$EC2_APP_DIR'"
+
+      - name: Rsync code to EC2
+        run: |
+          rsync -avz --delete \
+            --exclude '.git' \
+            --exclude '.github' \
+            --exclude 'node_modules' \
+            --exclude 'frontend/node_modules' \
+            --exclude 'frontend/dist' \
+            --exclude 'backend/.venv' \
+            --exclude '.venv' \
+            --exclude '.venv-pir' \
+            --exclude '**/__pycache__' \
+            --exclude 'dist' \
+            --exclude '*.pem' \
+            --exclude 'deploy/aws/.env.prod' \
+            --exclude '*.xlsx' \
+            -e "ssh -i ~/.ssh/legalhub.pem -o StrictHostKeyChecking=accept-new" \
+            ./ "$EC2_USER@$EC2_HOST:$EC2_APP_DIR/"
+
+      - name: Build & restart docker compose
+        run: |
+          ssh -i ~/.ssh/legalhub.pem "$EC2_USER@$EC2_HOST" bash -se <<EOF
+          set -euo pipefail
+          cd "$EC2_APP_DIR/deploy/aws"
+          if [ ! -f .env.prod ]; then
+            echo "ERROR: deploy/aws/.env.prod не найден на сервере. Создайте его один раз вручную."
+            exit 1
+          fi
+          docker compose -f docker-compose.prod.yml --env-file .env.prod pull || true
+          docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build --remove-orphans
+          docker system prune -f --filter "until=24h" || true
+          EOF
+
+      - name: Smoke check
+        run: |
+          # Ждём поднятия сервисов и проверяем health.
+          for i in {1..20}; do
+            code=$(curl -sk -o /dev/null -w '%{http_code}' "https://$EC2_HOST/health" || echo 000)
+            if [ "$code" = "200" ]; then echo "OK: health 200"; exit 0; fi
+            echo "[$i/20] health=$code, retrying..."
+            sleep 6
+          done
+          echo "WARN: health endpoint did not return 200 in time"
+          # не валим деплой по smoke — TLS-сертификат / домен могут быть другие
