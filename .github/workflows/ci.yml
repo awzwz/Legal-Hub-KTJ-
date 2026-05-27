@@ -62,8 +62,10 @@ jobs:
       - name: Lint
         run: ruff check app tests
 
-      - name: Test
-        run: pytest -q
+      - name: Test (unit)
+        # Интеграционные и excel-template тесты помечены маркерами и
+        # запускаются отдельно (требуют поднятой инфры + xlsx-шаблонов).
+        run: pytest -q -m "not integration and not excel_template"
 
   frontend:
     name: Frontend (lint + vitest)

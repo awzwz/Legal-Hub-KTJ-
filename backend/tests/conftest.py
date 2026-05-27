@@ -25,3 +25,15 @@ def settings():
 
     get_settings.cache_clear()
     return get_settings()
+
+
+def pytest_collection_modifyitems(config, items):
+    """Авто-разметка тестов по расположению/имени файла, чтобы CI мог
+    запускать только стабильные unit-тесты через `-m "not integration and not excel_template"`.
+    """
+    for item in items:
+        path = str(item.fspath)
+        if "tests/integration/" in path:
+            item.add_marker(pytest.mark.integration)
+        if "test_pir_excel_export" in path or "pir_compare" in path:
+            item.add_marker(pytest.mark.excel_template)
