@@ -33,7 +33,7 @@ from openpyxl.workbook.workbook import Workbook
 from openpyxl.worksheet.worksheet import Worksheet
 
 from app.models import Claim
-from app.domain.pir_excel_fill import _merge_openpyxl_into_template_package
+from app.domain.pir_package_xml import merge_openpyxl_into_template_package
 
 TEMPLATE_PATH = Path(__file__).resolve().parents[2] / "templates" / "claims_registry_template.xlsx"
 
@@ -206,4 +206,4 @@ def build_claims_workbook_bytes(claims: list[Claim], date_from: date, date_to: d
     # Сохраним результат и пропустим через ZIP-merge для сохранения форматирования
     buf = BytesIO()
     wb.save(buf)
-    return _merge_openpyxl_into_template_package(TEMPLATE_PATH, buf.getvalue())
+    return merge_openpyxl_into_template_package(TEMPLATE_PATH, buf.getvalue())
