@@ -1,4 +1,3 @@
-import * as XLSX from "xlsx";
 import {
   caseStatusLabels,
   caseTypeLabels,
@@ -16,58 +15,71 @@ const riskLabels: Record<LegalCase["riskLevel"], string> = {
 const getCounterparty = (c: LegalCase) =>
   c.partyRole === "defendant" ? c.plaintiff : c.defendant;
 
-export function exportCasesToExcel(cases: LegalCase[], fileName?: string) {
-  const rows = cases.map((c) => ({
-    "№ дела": c.caseNumber,
-    "Контрагент": getCounterparty(c),
-    "БИН/ИИН": c.companyBIN,
-    "Тип": caseTypeLabels[c.caseType] ?? c.caseType,
-    "Роль КТЖ": partyRoleLabels[c.partyRole] ?? c.partyRole,
-    "Статус": caseStatusLabels[c.status] ?? c.status,
-    "Инстанция": courtInstanceLabels[c.courtInstance] ?? c.courtInstance,
-    "Наименование суда": c.court,
-    "Судья": c.judge,
-    "Сумма иска (₸)": c.claimAmount,
-    "Взыскано (₸)": c.paidAmount,
-    "Юрист": c.assignedLawyer,
-    "Филиал": c.branch,
-    "Город": c.city,
-    "Уровень значимости": riskLabels[c.riskLevel] ?? c.riskLevel,
-    "Дата подачи": c.filingDate,
-    "Ближайшее заседание":
-      c.nextHearing === "not_set" || !c.nextHearing ? "Не назначено" : c.nextHearing,
-    "Срок оплаты": c.paymentDeadline ?? "",
-    "Просрочено (дней)": c.daysOverdue,
-  }));
+const columns: Array<{ header: string; key: string; width: number; getValue: (c: LegalCase) => unknown }> = [
+  { header: "№ дела", key: "caseNumber", width: 18, getValue: (c) => c.caseNumber },
+  { header: "Контрагент", key: "counterparty", width: 32, getValue: getCounterparty },
+  { header: "БИН/ИИН", key: "companyBIN", width: 14, getValue: (c) => c.companyBIN },
+  { header: "Тип", key: "caseType", width: 22, getValue: (c) => caseTypeLabels[c.caseType] ?? c.caseType },
+  { header: "Роль КТЖ", key: "partyRole", width: 14, getValue: (c) => partyRoleLabels[c.partyRole] ?? c.partyRole },
+  { header: "Статус", key: "status", width: 22, getValue: (c) => caseStatusLabels[c.status] ?? c.status },
+  {
+    header: "Инстанция",
+    key: "courtInstance",
+    width: 22,
+    getValue: (c) => courtInstanceLabels[c.courtInstance] ?? c.courtInstance,
+  },
+  { header: "Наименование суда", key: "court", width: 28, getValue: (c) => c.court },
+  { header: "Судья", key: "judge", width: 22, getValue: (c) => c.judge },
+  { header: "Сумма иска (₸)", key: "claimAmount", width: 16, getValue: (c) => c.claimAmount },
+  { header: "Взыскано (₸)", key: "paidAmount", width: 16, getValue: (c) => c.paidAmount },
+  { header: "Юрист", key: "assignedLawyer", width: 22, getValue: (c) => c.assignedLawyer },
+  { header: "Филиал", key: "branch", width: 24, getValue: (c) => c.branch },
+  { header: "Город", key: "city", width: 14, getValue: (c) => c.city },
+  { header: "Уровень значимости", key: "riskLevel", width: 18, getValue: (c) => riskLabels[c.riskLevel] ?? c.riskLevel },
+  { header: "Дата подачи", key: "filingDate", width: 12, getValue: (c) => c.filingDate },
+  {
+    header: "Ближайшее заседание",
+    key: "nextHearing",
+    width: 18,
+    getValue: (c) => c.nextHearing === "not_set" || !c.nextHearing ? "Не назначено" : c.nextHearing,
+  },
+  { header: "Срок оплаты", key: "paymentDeadline", width: 12, getValue: (c) => c.paymentDeadline ?? "" },
+  { header: "Просрочено (дней)", key: "daysOverdue", width: 12, getValue: (c) => c.daysOverdue },
+];
 
-  const ws = XLSX.utils.json_to_sheet(rows);
+export const toSpreadsheetCell = (value: unknown) => {
+  if (value === null || value === undefined) return "";
+  if (typeof value !== "string") return value;
+  // Keep imported text inert when the workbook is opened in spreadsheet applications.
+  return /^[=+\-@\t\r]/.test(value) ? `'${value}` : value;
+};
 
-  ws["!cols"] = [
-    { wch: 18 }, // № дела
-    { wch: 32 }, // Контрагент
-    { wch: 14 }, // БИН/ИИН
-    { wch: 22 }, // Тип
-    { wch: 14 }, // Роль
-    { wch: 22 }, // Статус
-    { wch: 22 }, // Инстанция
-    { wch: 28 }, // Наименование суда
-    { wch: 22 }, // Судья
-    { wch: 16 }, // Сумма иска
-    { wch: 16 }, // Взыскано
-    { wch: 22 }, // Юрист
-    { wch: 24 }, // Филиал
-    { wch: 14 }, // Город
-    { wch: 12 }, // Риск
-    { wch: 12 }, // Дата подачи
-    { wch: 18 }, // Ближайшее заседание
-    { wch: 12 }, // Срок оплаты
-    { wch: 12 }, // Просрочено
-  ];
+export async function buildCasesWorkbook(cases: LegalCase[]) {
+  const { Workbook } = await import("exceljs");
+  const workbook = new Workbook();
+  const worksheet = workbook.addWorksheet("Реестр судебных дел");
+  worksheet.columns = columns.map(({ header, key, width }) => ({ header, key, width }));
+  worksheet.views = [{ state: "frozen", ySplit: 1 }];
+  worksheet.getRow(1).font = { bold: true };
+  for (const legalCase of cases) {
+    worksheet.addRow(
+      Object.fromEntries(columns.map(({ key, getValue }) => [key, toSpreadsheetCell(getValue(legalCase))])),
+    );
+  }
+  return workbook.xlsx.writeBuffer();
+}
 
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, "Реестр судебных дел");
-
+export async function exportCasesToExcel(cases: LegalCase[], fileName?: string) {
+  const buffer = await buildCasesWorkbook(cases);
+  const blob = new Blob([buffer], {
+    type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  });
   const today = new Date().toISOString().slice(0, 10);
   const name = fileName ?? `Реестр_судебных_дел_${today}.xlsx`;
-  XLSX.writeFile(wb, name);
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = name;
+  link.click();
+  URL.revokeObjectURL(url);
 }

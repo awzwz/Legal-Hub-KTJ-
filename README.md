@@ -80,6 +80,7 @@ SPA не запрашивает дела с API: используется наб
 | `INTERNAL_API_KEY` | Заголовок `X-Internal-Key` для интеграций (1С). | случайная строка |
 | `RELAX_AUTH` | dev-режим без токена. Запрещён при `ENV=production`. | `false` |
 | `AUTO_DDL` | Создавать таблицы на старте. Запрещён при `ENV=production`. | `false` |
+| `DEMO_SEED_ENABLED` | Создавать demo-аккаунты и demo-данные при пустой БД. Только для локальной разработки. Запрещён при `ENV=production`. | `false` |
 | `COOKIE_SECURE` / `COOKIE_SAMESITE` | Атрибуты refresh-cookie. На HTTPS-проде — `true` / `strict`. | `true` / `strict` |
 | `CORS_ORIGINS` | Список origin'ов через запятую. | `https://app.example.kz` |
 

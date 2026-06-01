@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.deps import get_current_user, user_branch_filter
+from app.core.permissions import require_can_mutate
 from app.db.session import get_db
 from app.models import Case, ProceduralDeadline, User
 from app.schemas.procedural import ProceduralDeadlineCreate, ProceduralDeadlineUpdate
@@ -74,7 +75,7 @@ async def create_deadline(
     case_id: UUID,
     body: ProceduralDeadlineCreate,
     db: Annotated[AsyncSession, Depends(get_db)],
-    user: Annotated[User, Depends(get_current_user)],
+    user: Annotated[User, Depends(require_can_mutate)],
 ):
     case = await db.get(Case, case_id)
     if case is None:
@@ -101,7 +102,7 @@ async def patch_deadline(
     deadline_id: UUID,
     body: ProceduralDeadlineUpdate,
     db: Annotated[AsyncSession, Depends(get_db)],
-    user: Annotated[User, Depends(get_current_user)],
+    user: Annotated[User, Depends(require_can_mutate)],
 ):
     d = await db.get(ProceduralDeadline, deadline_id)
     if d is None:
@@ -122,7 +123,7 @@ async def patch_deadline(
 async def delete_deadline(
     deadline_id: UUID,
     db: Annotated[AsyncSession, Depends(get_db)],
-    user: Annotated[User, Depends(get_current_user)],
+    user: Annotated[User, Depends(require_can_mutate)],
 ):
     d = await db.get(ProceduralDeadline, deadline_id)
     if d is None:

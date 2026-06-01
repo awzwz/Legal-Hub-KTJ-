@@ -65,7 +65,6 @@ jobs:
             --exclude 'dist' \
             --exclude '*.pem' \
             --exclude 'deploy/aws/.env.prod' \
-            --exclude '*.xlsx' \
             -e "ssh -i ~/.ssh/legalhub.pem -o StrictHostKeyChecking=accept-new" \
             ./ "$EC2_USER@$EC2_HOST:$EC2_APP_DIR/"
 
@@ -90,11 +89,12 @@ jobs:
           DOMAIN: ${{ secrets.LEGALHUB_DOMAIN }}
         run: |
           DOMAIN="${DOMAIN:-$(echo "$EC2_HOST" | tr . -).nip.io}"
-          echo "Probing https://$DOMAIN/health"
+          echo "Probing https://$DOMAIN/readyz"
           for i in {1..20}; do
-            code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 "https://$DOMAIN/health" || echo 000)
-            if [ "$code" = "200" ]; then echo "OK: health 200"; exit 0; fi
-            echo "[$i/20] health=$code, retrying..."
+            body=$(curl --fail --silent --show-error --max-time 5 "https://$DOMAIN/readyz" || true)
+            if echo "$body" | grep -q '"status":"ready"'; then echo "OK: readyz"; exit 0; fi
+            echo "[$i/20] readyz unavailable, retrying..."
             sleep 6
           done
-          echo "WARN: health endpoint did not return 200 in time (not failing deploy)"
+          echo "ERROR: readyz endpoint did not become healthy in time"
+          exit 1

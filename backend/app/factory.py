@@ -14,6 +14,7 @@ from fastapi import APIRouter, FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from sqlalchemy import text
 
 from app.core.config import get_settings
 from app.core.observability import attach_observability
@@ -46,7 +47,7 @@ def create_lifespan(
         if settings.auto_ddl:
             async with engine.begin() as conn:
                 await conn.run_sync(Base.metadata.create_all)
-        if enable_demo_seed:
+        if enable_demo_seed and settings.demo_seed_enabled:
             if iam_identity_seed_only and (settings.iam_database_url or "").strip():
                 from app.db.iam_session import _ensure_iam_engine
                 from app.domain.iam_seed import run_iam_identity_seed_if_empty
@@ -125,5 +126,33 @@ def create_legalhub_app(
     @app.get("/health")
     async def health():
         return {"status": "ok", "service": title}
+
+    @app.get("/readyz")
+    async def readiness():
+        checks: dict[str, str] = {}
+        try:
+            async with SessionLocal() as session:
+                await session.execute(text("SELECT 1"))
+            checks["postgres"] = "ok"
+        except Exception:
+            logger.exception("Readiness check failed: postgres")
+            checks["postgres"] = "unavailable"
+
+        settings = get_settings()
+        if settings.redis_url:
+            try:
+                from app.domain.redis_client import get_redis
+
+                redis = await get_redis()
+                if redis is None or not await redis.ping():
+                    raise RuntimeError("Redis ping failed")
+                checks["redis"] = "ok"
+            except Exception:
+                logger.exception("Readiness check failed: redis")
+                checks["redis"] = "unavailable"
+
+        ready = all(value == "ok" for value in checks.values())
+        payload = {"status": "ready" if ready else "unavailable", "service": title, "checks": checks}
+        return JSONResponse(payload, status_code=200 if ready else 503)
 
     return app

@@ -185,9 +185,9 @@ const Index = () => {
                   variant="outline"
                   className="gap-2 border-blue-200 text-blue-700 hover:bg-blue-50"
                   disabled={filteredCases.length === 0}
-                  onClick={() => {
+                  onClick={async () => {
                     try {
-                      exportCasesToExcel(filteredCases);
+                      await exportCasesToExcel(filteredCases);
                       toast({
                         title: "Файл сформирован",
                         description: `Выгружено дел: ${filteredCases.length}.`,

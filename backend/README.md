@@ -86,16 +86,18 @@ Vite в этом сценарии **не нужен**; для HMR: `cd ../fronte
 | `S3_ENDPOINT_URL`, `S3_BUCKET`, `AWS_*` | Optional: duplicate PIR exports to S3 (`X-Export-Storage` response header). |
 | `RELAX_AUTH` | If `true`, requests act as `director@company.kz` without `Authorization` (local only). |
 | `AUTO_DDL` | If `true`, creates tables on startup via SQLAlchemy `create_all` (dev convenience). Use `false` in production and rely on **Alembic** only. |
+| `DEMO_SEED_ENABLED` | If `true`, seeds demo accounts and rows into an empty DB. Local development only; production rejects it. |
 
-### Default users (after seed)
+### Default users (local demo seed only)
 
-Password for all: **`legalhub123`**
+Set `DEMO_SEED_ENABLED=true` only for a disposable local database. Password for all seeded demo users:
+**`legalhub123`**. Production rejects this seed mode.
 
 - `director@company.kz` — director (all branches)
 - `kasymov@company.kz` — branch lawyer, Северный
 - `nurlanova@company.kz` — branch lawyer, Южный
 - `akhmetov@company.kz` — branch lawyer, Центральный (филиал)
-- `accountant@company.kz` — accountant (read-only mutations blocked at router when implemented)
+- `accountant@company.kz` — accountant (read-only)
 
 ## API contract (frontend)
 

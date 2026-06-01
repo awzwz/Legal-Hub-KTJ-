@@ -6,11 +6,12 @@ import os
 
 import pytest
 
+pytestmark = pytest.mark.asyncio(loop_scope="session")
+
 # Берём ключ из окружения (CI задаёт собственный); fallback на тестовый дефолт.
 HEADERS_OK = {"X-Internal-Key": os.environ.get("INTERNAL_API_KEY", "test-internal-key")}
 
 
-@pytest.mark.asyncio
 async def test_payment_sync_requires_key(app_client):
     r = await app_client.post(
         "/api/internal/payments/sync",
@@ -25,7 +26,6 @@ async def test_payment_sync_requires_key(app_client):
     assert r.status_code == 401
 
 
-@pytest.mark.asyncio
 async def test_payment_sync_rejects_wrong_key(app_client):
     r = await app_client.post(
         "/api/internal/payments/sync",
@@ -41,7 +41,6 @@ async def test_payment_sync_rejects_wrong_key(app_client):
     assert r.status_code == 401
 
 
-@pytest.mark.asyncio
 async def test_payment_sync_idempotent(app_client):
     """Дубль с тем же document_number+payer_bin не создаёт новую запись."""
     payload = {

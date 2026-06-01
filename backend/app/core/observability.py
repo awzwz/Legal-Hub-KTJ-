@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import os
+import time
 import uuid
 from typing import TYPE_CHECKING
 
@@ -47,11 +48,12 @@ def configure_structured_logging() -> None:
 def setup_prometheus_middleware(app: FastAPI) -> None:
     @app.middleware("http")
     async def prometheus_middleware(request: Request, call_next):
+        method = request.method
+        started_at = time.perf_counter()
+        response = await call_next(request)
         route = request.scope.get("route")
         path_template = getattr(route, "path", request.url.path) if route else request.url.path
-        method = request.method
-        with REQUEST_LATENCY.labels(method, path_template).time():
-            response = await call_next(request)
+        REQUEST_LATENCY.labels(method, path_template).observe(time.perf_counter() - started_at)
         status = str(response.status_code)
         REQUEST_COUNT.labels(method, path_template, status).inc()
         return response
