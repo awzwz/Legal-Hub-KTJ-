@@ -19,7 +19,7 @@ from sqlalchemy import (
     UniqueConstraint,
 )
 from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.orm import Mapped, foreign, mapped_column, relationship
 
 from app.db.base import Base
 
@@ -54,11 +54,10 @@ class Case(Base):
         String(32), nullable=False, default="procurement", server_default="procurement"
     )
 
-    branch_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("branches.id"), nullable=False
-    )
+    # Cross-domain soft refs (нет FK на branches/users — IAM может жить в отдельной БД).
+    branch_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False, index=True)
     assigned_lawyer_id: Mapped[Optional[uuid.UUID]] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
+        UUID(as_uuid=True), nullable=True, index=True
     )
 
     finances: Mapped["CaseFinance"] = relationship(
@@ -90,9 +89,17 @@ class Case(Base):
         "ProceduralDeadline", back_populates="case", cascade="all, delete-orphan"
     )
 
-    branch: Mapped["Branch"] = relationship("Branch", lazy="joined")  # type: ignore[name-defined]
+    branch: Mapped["Branch"] = relationship(  # type: ignore[name-defined]
+        "Branch",
+        primaryjoin="foreign(Case.branch_id) == Branch.id",
+        lazy="joined",
+        viewonly=True,
+    )
     assigned_lawyer: Mapped[Optional["User"]] = relationship(  # type: ignore[name-defined]
-        "User", foreign_keys=[assigned_lawyer_id], lazy="joined"
+        "User",
+        primaryjoin="foreign(Case.assigned_lawyer_id) == User.id",
+        lazy="joined",
+        viewonly=True,
     )
     case_lawyers: Mapped[List["CaseLawyer"]] = relationship(
         "CaseLawyer", back_populates="case", cascade="all, delete-orphan"
@@ -107,15 +114,19 @@ class CaseLawyer(Base):
     case_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("cases.id", ondelete="CASCADE"), primary_key=True
     )
-    user_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
-    )
+    # Cross-domain soft ref (IAM owns users).
+    user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, index=True)
     role_label: Mapped[str] = mapped_column(
         String(64), nullable=False, default="executor", server_default="executor"
     )
 
     case: Mapped["Case"] = relationship("Case", back_populates="case_lawyers")
-    user: Mapped["User"] = relationship("User", lazy="joined")  # type: ignore[name-defined]
+    user: Mapped["User"] = relationship(  # type: ignore[name-defined]
+        "User",
+        primaryjoin="foreign(CaseLawyer.user_id) == User.id",
+        lazy="joined",
+        viewonly=True,
+    )
 
 
 class Claim(Base):
@@ -135,11 +146,10 @@ class Claim(Base):
     status_detail: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
-    branch_id: Mapped[Optional[uuid.UUID]] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("branches.id"), nullable=True
-    )
+    # Cross-domain soft refs (IAM may live in a separate DB).
+    branch_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), nullable=True, index=True)
     assigned_lawyer_id: Mapped[Optional[uuid.UUID]] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
+        UUID(as_uuid=True), nullable=True, index=True
     )
     case_id: Mapped[Optional[uuid.UUID]] = mapped_column(
         UUID(as_uuid=True), ForeignKey("cases.id"), nullable=True
@@ -152,9 +162,17 @@ class Claim(Base):
         DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
     )
 
-    branch: Mapped[Optional["Branch"]] = relationship("Branch", lazy="joined")  # type: ignore[name-defined]
+    branch: Mapped[Optional["Branch"]] = relationship(  # type: ignore[name-defined]
+        "Branch",
+        primaryjoin="foreign(Claim.branch_id) == Branch.id",
+        lazy="joined",
+        viewonly=True,
+    )
     assigned_lawyer: Mapped[Optional["User"]] = relationship(  # type: ignore[name-defined]
-        "User", foreign_keys=[assigned_lawyer_id], lazy="joined"
+        "User",
+        primaryjoin="foreign(Claim.assigned_lawyer_id) == User.id",
+        lazy="joined",
+        viewonly=True,
     )
     case: Mapped[Optional["Case"]] = relationship("Case", back_populates="claims", foreign_keys=[case_id])
 
@@ -217,9 +235,8 @@ class CaseDocument(Base):
     storage_key: Mapped[Optional[str]] = mapped_column(String(1024), nullable=True)
     mime_type: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
     size_bytes: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
-    uploaded_by: Mapped[Optional[uuid.UUID]] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
-    )
+    # Cross-domain soft ref to IAM.
+    uploaded_by: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), nullable=True, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
     case: Mapped["Case"] = relationship("Case", back_populates="documents")
@@ -236,9 +253,8 @@ class CaseEvent(Base):
     user_label: Mapped[str] = mapped_column(String(255), nullable=False)
     detail: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     happened_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    user_id: Mapped[Optional[uuid.UUID]] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
-    )
+    # Cross-domain soft ref to IAM.
+    user_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), nullable=True, index=True)
 
     case: Mapped["Case"] = relationship("Case", back_populates="events")
 
@@ -250,9 +266,8 @@ class CaseComment(Base):
     case_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("cases.id", ondelete="CASCADE"), nullable=False
     )
-    user_id: Mapped[Optional[uuid.UUID]] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
-    )
+    # Cross-domain soft ref to IAM.
+    user_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), nullable=True, index=True)
     author_name: Mapped[str] = mapped_column(String(255), nullable=False)
     role_label: Mapped[str] = mapped_column(String(128), nullable=False)
     text: Mapped[str] = mapped_column(Text, nullable=False)

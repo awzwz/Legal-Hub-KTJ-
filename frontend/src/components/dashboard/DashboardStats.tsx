@@ -64,7 +64,7 @@ export interface DrillDownPayload {
   caseIds?: string[];
 }
 
-const DashboardStats = ({ cases, onDrillDown }: { cases?: LegalCase[]; onDrillDown?: (payload: DrillDownPayload) => void }) => {
+const DashboardStats = ({ cases, year, onDrillDown }: { cases?: LegalCase[]; year?: number; onDrillDown?: (payload: DrillDownPayload) => void }) => {
   const { user } = useCurrentUser();
   const userCases = cases ?? [];
 
@@ -92,7 +92,7 @@ const DashboardStats = ({ cases, onDrillDown }: { cases?: LegalCase[]; onDrillDo
   const highRiskCases = userCases.filter(c => c.riskLevel === "high").length;
 
   // KPI юр. службы (формулы по согласованию с юристом).
-  const { data: kpi } = useKpiOverview();
+  const { data: kpi } = useKpiOverview(year);
   const kpi2Bad = kpi?.kpi2_percent != null && kpi.kpi2_percent >= (kpi?.kpi2_threshold ?? 2);
 
   const defendantCases = userCases.filter(c => c.partyRole === "defendant");

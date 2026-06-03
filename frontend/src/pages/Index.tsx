@@ -29,18 +29,21 @@ import type { DateRange } from "react-day-picker";
 import { exportCasesToExcel } from "@/lib/exportCases";
 import { toast } from "@/hooks/use-toast";
 
-type DashboardPeriod = "week" | "month" | "quarter" | "year" | "all" | "custom";
+type DashboardPeriod = "2026" | "2025" | "week" | "month" | "quarter" | "year" | "all" | "custom";
+type RelativeDashboardPeriod = "week" | "month" | "quarter" | "year";
 
 const periodLabels: Record<DashboardPeriod, string> = {
+  "2026": "2026",
+  "2025": "2025",
   week: "За неделю",
   month: "За месяц",
   quarter: "За квартал",
-  year: "За год",
+  year: "За 365 дней",
   all: "За всё время",
   custom: "Свой период",
 };
 
-const periodDays: Record<Exclude<DashboardPeriod, "all" | "custom">, number> = {
+const periodDays: Record<RelativeDashboardPeriod, number> = {
   week: 7,
   month: 30,
   quarter: 90,
@@ -52,8 +55,8 @@ const Index = () => {
   const [activeSection, setActiveSection] = useState("dashboard");
   const [selectedCaseId, setSelectedCaseId] = useState<string | null>(null);
   const [filters, setFilters] = useState<CaseFilters>(defaultFilters);
-  // Default "all": seed/API cases use fixed filing years; "month" would show zeros when system date is far ahead.
-  const [dashboardPeriod, setDashboardPeriod] = useState<DashboardPeriod>("all");
+  // По умолчанию показываем текущий демо-год, чтобы KPI и графики не смешивали 2025/2026.
+  const [dashboardPeriod, setDashboardPeriod] = useState<DashboardPeriod>("2026");
   const [customRange, setCustomRange] = useState<DateRange | undefined>(undefined);
 
   const handleUserChange = useCallback(() => {
@@ -88,8 +91,15 @@ const Index = () => {
   const userCases = getFilteredCasesForUser(user, allCases);
   const lawyerDirectory = useLawyerDirectory(user, userCases);
   const filteredCases = useFilteredCases(filters, userCases);
+  const dashboardYear = dashboardPeriod === "2025" || dashboardPeriod === "2026"
+    ? Number(dashboardPeriod)
+    : undefined;
 
   const dashboardCases = useMemo(() => {
+    if (dashboardPeriod === "2025" || dashboardPeriod === "2026") {
+      const y = Number(dashboardPeriod);
+      return userCases.filter((c) => new Date(`${c.filingDate}T12:00:00`).getFullYear() === y);
+    }
     if (dashboardPeriod === "all") return userCases;
     if (dashboardPeriod === "custom") {
       if (!customRange?.from) return userCases;
@@ -171,8 +181,8 @@ const Index = () => {
                 )}
               </div>
             </div>
-            <DashboardStats cases={dashboardCases} onDrillDown={handleDrillDown} />
-            <DashboardCharts cases={dashboardCases} />
+            <DashboardStats cases={dashboardCases} year={dashboardYear} onDrillDown={handleDrillDown} />
+            <DashboardCharts cases={dashboardCases} year={dashboardYear} />
           </>
         );
       case "cases":
