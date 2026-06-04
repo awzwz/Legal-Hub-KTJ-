@@ -125,9 +125,11 @@ async def create_case(db: AsyncSession, user: User, body: CreateLegalCaseBody) -
     if user.role != Role.BRANCH_LAWYER or not user.branch_id:
         raise HTTPException(status_code=403, detail="Only branch lawyers can create cases")
 
-    r = await db.execute(select(Branch).where(Branch.name == body.branch))
-    br = r.scalar_one_or_none()
-    if not br or br.id != user.branch_id:
+    # Дело филиального юриста всегда создается в его филиале. Название филиала
+    # в UI может быть канонизированным ("РФ «Северный»"), а в БД храниться
+    # короче ("Северный"), поэтому не привязываем создание к строке из формы.
+    br = await db.get(Branch, user.branch_id)
+    if not br:
         raise HTTPException(status_code=403, detail="Invalid branch for this user")
 
     case_id = uuid4()

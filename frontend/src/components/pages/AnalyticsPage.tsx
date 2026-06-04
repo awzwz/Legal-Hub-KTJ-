@@ -1,13 +1,38 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { formatAmountShort, getLawyerStats, caseTypeLabels, mergeBranchDirectory, getBranchNamesFromCases, getFilteredCasesForUser, canViewAllBranches, isRealBranchNameForStats } from "@/data/mockData";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { useCases } from "@/hooks/useCases";
 import { useLawyerDirectory } from "@/hooks/useLawyerDirectory";
 import { useBranchesNames } from "@/hooks/useBranchesNames";
 import { motion } from "framer-motion";
-import { Eye } from "lucide-react";
+import { CalendarRange, Eye } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { DonutWithLegend } from "@/components/ui/donut-with-legend";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+
+type AnalyticsYear = "2026" | "2025" | "all";
+type AnalyticsPeriod = "full" | "q1" | "q2" | "q3" | "q4";
+
+const yearLabels: Record<AnalyticsYear, string> = {
+  "2026": "2026",
+  "2025": "2025",
+  all: "Все годы",
+};
+
+const periodLabels: Record<AnalyticsPeriod, string> = {
+  full: "Весь год",
+  q1: "Q1 (январь–март)",
+  q2: "Q2 (апрель–июнь)",
+  q3: "Q3 (июль–сентябрь)",
+  q4: "Q4 (октябрь–декабрь)",
+};
+
+const quarterMonths: Record<"q1" | "q2" | "q3" | "q4", [number, number]> = {
+  q1: [0, 2],
+  q2: [3, 5],
+  q3: [6, 8],
+  q4: [9, 11],
+};
 
 function pctLinear(value: number, max: number): number {
   if (max <= 0 || value <= 0) return 0;
@@ -48,10 +73,33 @@ function MetricBar({
 const AnalyticsPage = () => {
   const { user } = useCurrentUser();
   const allCases = useCases();
-  const userCases = getFilteredCasesForUser(user, allCases);
-  const lawyerDirectory = useLawyerDirectory(user, userCases);
+  const userCasesAll = getFilteredCasesForUser(user, allCases);
   const apiBranchNames = useBranchesNames();
   const canViewAll = canViewAllBranches(user);
+
+  // Год + Период (общий фильтр для всех графиков на странице).
+  const [year, setYearState] = useState<AnalyticsYear>("2026");
+  const [period, setPeriod] = useState<AnalyticsPeriod>("full");
+  const setYear = (y: AnalyticsYear) => {
+    setYearState(y);
+    if (y === "all") setPeriod("full");
+  };
+
+  const userCases = useMemo(() => {
+    let base = userCasesAll;
+    if (year !== "all") {
+      const y = Number(year);
+      base = base.filter((c) => new Date(`${c.filingDate}T12:00:00`).getFullYear() === y);
+    }
+    if (year === "all" || period === "full") return base;
+    const [m0, m1] = quarterMonths[period];
+    return base.filter((c) => {
+      const m = new Date(`${c.filingDate}T12:00:00`).getMonth();
+      return m >= m0 && m <= m1;
+    });
+  }, [userCasesAll, year, period]);
+
+  const lawyerDirectory = useLawyerDirectory(user, userCases);
 
   const visibleBranches = useMemo(() => {
     if (canViewAll) return mergeBranchDirectory(apiBranchNames, userCases);
@@ -110,14 +158,44 @@ const AnalyticsPage = () => {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-4">
-        <h2 className="text-lg font-semibold">Аналитика</h2>
-        {!canViewAll && (
-          <span className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-warning/10 text-warning text-xs">
-            <Eye className="w-3 h-3" />
-            {user.branch} — ограниченный доступ
+      <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
+        <div className="flex items-center gap-3 flex-wrap">
+          <h2 className="text-lg font-semibold">Аналитика</h2>
+          {!canViewAll && (
+            <span className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-warning/10 text-warning text-xs">
+              <Eye className="w-3 h-3" />
+              {user.branch} — ограниченный доступ
+            </span>
+          )}
+          <span className="text-xs text-muted-foreground tabular-nums">
+            Показано дел: <b>{userCases.length}</b> из {userCasesAll.length}
           </span>
-        )}
+        </div>
+        <div className="flex items-center gap-2 flex-wrap">
+          <CalendarRange className="w-4 h-4 text-blue-600" />
+          <span className="text-sm text-blue-700 font-medium">Год:</span>
+          <Select value={year} onValueChange={(v) => setYear(v as AnalyticsYear)}>
+            <SelectTrigger className="h-9 w-[130px]"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              {(Object.keys(yearLabels) as AnalyticsYear[]).map((y) => (
+                <SelectItem key={y} value={y}>{yearLabels[y]}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <span className="text-sm text-blue-700 font-medium ml-2">Период:</span>
+          <Select
+            value={period}
+            onValueChange={(v) => setPeriod(v as AnalyticsPeriod)}
+            disabled={year === "all"}
+          >
+            <SelectTrigger className="h-9 w-[200px]"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              {(Object.keys(periodLabels) as AnalyticsPeriod[]).map((p) => (
+                <SelectItem key={p} value={p}>{periodLabels[p]}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">

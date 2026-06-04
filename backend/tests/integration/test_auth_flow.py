@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import pytest
 
+pytestmark = pytest.mark.asyncio(loop_scope="session")
 
-@pytest.mark.asyncio
+
 async def test_login_returns_access_and_refresh_cookie(app_client, seeded_user):
     r = await app_client.post("/api/v1/auth/login", json=seeded_user)
     assert r.status_code == 200, r.text
@@ -14,7 +15,6 @@ async def test_login_returns_access_and_refresh_cookie(app_client, seeded_user):
     assert "refresh_token" in r.cookies
 
 
-@pytest.mark.asyncio
 async def test_login_bad_password_rejected(app_client, seeded_user):
     r = await app_client.post(
         "/api/v1/auth/login",
@@ -23,7 +23,6 @@ async def test_login_bad_password_rejected(app_client, seeded_user):
     assert r.status_code == 401
 
 
-@pytest.mark.asyncio
 async def test_me_with_bearer(app_client, seeded_user):
     r = await app_client.post("/api/v1/auth/login", json=seeded_user)
     token = r.json()["access_token"]
@@ -35,7 +34,6 @@ async def test_me_with_bearer(app_client, seeded_user):
     assert r2.json()["email"] == seeded_user["email"]
 
 
-@pytest.mark.asyncio
 async def test_refresh_rotates_cookie(app_client, seeded_user):
     r = await app_client.post("/api/v1/auth/login", json=seeded_user)
     old_refresh = r.cookies.get("refresh_token")

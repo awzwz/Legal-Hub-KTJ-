@@ -366,6 +366,7 @@ export const getLawyerNamesFromCases = (cases: LegalCase[]): string[] => {
   return Array.from(set).sort((a, b) => a.localeCompare(b, "ru"));
 };
 export interface Counterparty {
+  id: string;
   bin: string;
   name: string;
   totalCases: number;
@@ -378,17 +379,27 @@ export interface Counterparty {
 export const getCounterparties = (cases: LegalCase[]): Counterparty[] => {
   const map = new Map<string, Counterparty>();
   cases.forEach(c => {
-    const existing = map.get(c.companyBIN);
+    // У КТЖ-стороны компания/БИН в поле company/companyBIN — это и есть контрагент.
+    // БИН чаще всего пустой (импорт ПИР не содержит его для большинства дел),
+    // поэтому ключ группировки — нормализованное имя; БИН только переносим в карточку,
+    // если он есть. Это даёт 187 уникальных контрагентов вместо 3.
+    const rawName = (c.company || "").trim();
+    if (!rawName) return;
+    const key = rawName.toLowerCase().replace(/\s+/g, " ");
+    const existing = map.get(key);
     if (existing) {
       existing.totalCases++;
       existing.activeCases += ["active", "mediation", "suspended", "execution"].includes(c.status) ? 1 : 0;
       existing.totalDebt += c.mainDebt;
       existing.totalPaid += c.paidAmount;
       if (c.filingDate > existing.lastCaseDate) existing.lastCaseDate = c.filingDate;
+      // если у нас ещё не было БИН — подхватываем первый встретившийся
+      if (!existing.bin && c.companyBIN) existing.bin = c.companyBIN;
     } else {
-      map.set(c.companyBIN, {
-        bin: c.companyBIN,
-        name: c.company,
+      map.set(key, {
+        id: key,
+        bin: c.companyBIN || "",
+        name: rawName,
         totalCases: 1,
         activeCases: ["active", "mediation", "suspended", "execution"].includes(c.status) ? 1 : 0,
         totalDebt: c.mainDebt,

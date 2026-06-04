@@ -154,7 +154,7 @@ const AddCaseDialog = ({ user }: { user: User }) => {
       toast({ variant: "destructive", title: "Не удалось создать дело", description: e.message });
     },
   });
-  const canSelectBranch = canViewAllCases(user);
+  const canSelectBranch = canViewAllCases(user) && user.role !== "branch_lawyer";
 
   const form = useForm<CaseFormValues>({
     resolver: zodResolver(formSchema),
@@ -193,6 +193,12 @@ const AddCaseDialog = ({ user }: { user: User }) => {
   const hearingNotSet = form.watch("hearingNotSet");
   const partyRole = form.watch("partyRole");
   const disputeCategory = form.watch("disputeCategory");
+  const calculatedClaimAmount =
+    form.watch("mainDebt") +
+    form.watch("stateFee") +
+    form.watch("fines") +
+    form.watch("repExpenses") +
+    form.watch("otherCosts");
 
   useEffect(() => {
     if (!open) {
@@ -248,7 +254,7 @@ const AddCaseDialog = ({ user }: { user: User }) => {
       defendant: isPlaintiff ? company : "АО «НК «КТЖ»",
       company,
       companyBIN: bin,
-      claimAmount: data.claimAmount,
+      claimAmount: data.mainDebt + data.stateFee + data.fines + data.repExpenses + data.otherCosts,
       mainDebt: data.mainDebt,
       stateFee: data.stateFee,
       fines: data.fines,
@@ -356,18 +362,24 @@ const AddCaseDialog = ({ user }: { user: User }) => {
                 <FormField control={form.control} name="branch" render={({ field }) => (
                   <FormItem>
                     <FormLabel>Участник</FormLabel>
-                    <Select onValueChange={field.onChange} defaultValue={field.value} disabled={!canSelectBranch}>
+                    {canSelectBranch ? (
+                      <Select onValueChange={field.onChange} defaultValue={field.value}>
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Выберите филиал" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          {branches.map(b => (
+                            <SelectItem key={b} value={b}>{b}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    ) : (
                       <FormControl>
-                        <SelectTrigger className={cn(!canSelectBranch && "bg-[hsl(220,14%,96%)] text-muted-foreground opacity-100")}>
-                          <SelectValue placeholder="Выберите филиал" />
-                        </SelectTrigger>
+                        <Input value={field.value || user.branch || ""} disabled className="bg-[hsl(220,14%,96%)] text-muted-foreground opacity-100" />
                       </FormControl>
-                      <SelectContent>
-                        {branches.map(b => (
-                          <SelectItem key={b} value={b}>{b}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    )}
                     <FormMessage />
                   </FormItem>
                 )} />
@@ -537,6 +549,21 @@ const AddCaseDialog = ({ user }: { user: User }) => {
                     <FormMessage />
                   </FormItem>
                 )} />
+                <FormField control={form.control} name="otherCosts" render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Иные расходы (₸)</FormLabel>
+                    <FormControl>
+                      <MoneyAmountInput value={field.value} onChange={field.onChange} onBlur={field.onBlur} name={field.name} ref={field.ref} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )} />
+                <div className="rounded-md border border-[hsl(215,35%,88%)] bg-[hsl(220,14%,98%)] px-3 py-2">
+                  <p className="text-xs text-muted-foreground">Цена иска</p>
+                  <p className="mt-1 text-sm font-semibold text-[hsl(215,35%,15%)]">
+                    {calculatedClaimAmount.toLocaleString("ru-RU")} ₸
+                  </p>
+                </div>
               </div>
             </div>
 

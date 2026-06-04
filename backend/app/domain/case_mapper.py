@@ -70,6 +70,18 @@ def compute_significance(row: Case) -> str:
     return levels[idx]
 
 
+def effective_significance(row: Case) -> str:
+    """User-facing significance.
+
+    Юристы управляют значимостью вручную. Авторасчет оставляем только как
+    fallback для старых/битых строк, где значение не заполнено корректно.
+    """
+    manual = (row.risk_level or "").strip().lower()
+    if manual in {"low", "medium", "high"}:
+        return manual
+    return compute_significance(row)
+
+
 def case_to_legal_case_out(row: Case) -> LegalCaseOut:
     fin = row.finances
     lawyer = row.assigned_lawyer.full_name if row.assigned_lawyer else ""
@@ -213,7 +225,7 @@ def case_to_legal_case_out(row: Case) -> LegalCaseOut:
         payment_deadline=_d(row.payment_deadline) if row.payment_deadline else None,
         days_overdue=row.days_overdue,
         last_updated=_d(row.last_updated),
-        risk_level=compute_significance(row),
+        risk_level=effective_significance(row),
         payments=payments,
         documents=documents,
         comments=comments,

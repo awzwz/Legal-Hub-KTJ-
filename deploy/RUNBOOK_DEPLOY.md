@@ -5,7 +5,7 @@
 1. Сборка образа с тегом semver.
 2. `alembic upgrade head` Job (один под, до success).
 3. Rolling update Deployment (maxUnavailable 0, maxSurge 1).
-4. Проверка `/health` и smoke-тест `/api/v1/branches`.
+4. Проверка `/readyz` и smoke-тест `/api/v1/branches`.
 
 ## Откат
 

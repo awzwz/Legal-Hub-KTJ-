@@ -16,7 +16,7 @@ import SettingsPage from "@/components/pages/SettingsPage";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { useCases } from "@/hooks/useCases";
 import { useLawyerDirectory } from "@/hooks/useLawyerDirectory";
-import { canViewAllAnalytics, canViewAuditLog, getFilteredCasesForUser } from "@/data/mockData";
+import { canAddCase, canViewAllAnalytics, canViewAuditLog, getFilteredCasesForUser } from "@/data/mockData";
 import AddCaseDialog from "@/components/dashboard/AddCaseDialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -29,25 +29,30 @@ import type { DateRange } from "react-day-picker";
 import { exportCasesToExcel } from "@/lib/exportCases";
 import { toast } from "@/hooks/use-toast";
 
-type DashboardPeriod = "2026" | "2025" | "week" | "month" | "quarter" | "year" | "all" | "custom";
-type RelativeDashboardPeriod = "week" | "month" | "quarter" | "year";
+type DashboardYear = "2026" | "2025" | "all";
+type DashboardPeriod = "full" | "q1" | "q2" | "q3" | "q4" | "month" | "custom";
 
-const periodLabels: Record<DashboardPeriod, string> = {
+const yearLabels: Record<DashboardYear, string> = {
   "2026": "2026",
   "2025": "2025",
-  week: "За неделю",
+  all: "Все годы",
+};
+
+const periodLabels: Record<DashboardPeriod, string> = {
+  full: "Весь год",
+  q1: "Q1 (январь–март)",
+  q2: "Q2 (апрель–июнь)",
+  q3: "Q3 (июль–сентябрь)",
+  q4: "Q4 (октябрь–декабрь)",
   month: "За месяц",
-  quarter: "За квартал",
-  year: "За 365 дней",
-  all: "За всё время",
   custom: "Свой период",
 };
 
-const periodDays: Record<RelativeDashboardPeriod, number> = {
-  week: 7,
-  month: 30,
-  quarter: 90,
-  year: 365,
+const quarterMonths: Record<"q1" | "q2" | "q3" | "q4", [number, number]> = {
+  q1: [0, 2],
+  q2: [3, 5],
+  q3: [6, 8],
+  q4: [9, 11],
 };
 
 const Index = () => {
@@ -56,8 +61,16 @@ const Index = () => {
   const [selectedCaseId, setSelectedCaseId] = useState<string | null>(null);
   const [filters, setFilters] = useState<CaseFilters>(defaultFilters);
   // По умолчанию показываем текущий демо-год, чтобы KPI и графики не смешивали 2025/2026.
-  const [dashboardPeriod, setDashboardPeriod] = useState<DashboardPeriod>("2026");
+  const [dashboardYear, setDashboardYearState] = useState<DashboardYear>("2026");
+  const [dashboardPeriod, setDashboardPeriod] = useState<DashboardPeriod>("full");
   const [customRange, setCustomRange] = useState<DateRange | undefined>(undefined);
+  const setDashboardYear = (y: DashboardYear) => {
+    setDashboardYearState(y);
+    if (y === "all") {
+      setDashboardPeriod("full");
+      setCustomRange(undefined);
+    }
+  };
 
   const handleUserChange = useCallback(() => {
     setSelectedCaseId(null);
@@ -91,28 +104,36 @@ const Index = () => {
   const userCases = getFilteredCasesForUser(user, allCases);
   const lawyerDirectory = useLawyerDirectory(user, userCases);
   const filteredCases = useFilteredCases(filters, userCases);
-  const dashboardYear = dashboardPeriod === "2025" || dashboardPeriod === "2026"
-    ? Number(dashboardPeriod)
-    : undefined;
+  const dashboardYearNum = dashboardYear === "all" ? undefined : Number(dashboardYear);
 
   const dashboardCases = useMemo(() => {
-    if (dashboardPeriod === "2025" || dashboardPeriod === "2026") {
-      const y = Number(dashboardPeriod);
-      return userCases.filter((c) => new Date(`${c.filingDate}T12:00:00`).getFullYear() === y);
+    // Шаг 1: фильтр по году.
+    let base = userCases;
+    if (dashboardYearNum !== undefined) {
+      base = base.filter((c) => new Date(`${c.filingDate}T12:00:00`).getFullYear() === dashboardYearNum);
     }
-    if (dashboardPeriod === "all") return userCases;
+    // Шаг 2: фильтр по периоду внутри года.
+    if (dashboardYearNum === undefined || dashboardPeriod === "full") return base;
     if (dashboardPeriod === "custom") {
-      if (!customRange?.from) return userCases;
+      if (!customRange?.from) return base;
       const from = customRange.from.getTime();
       const to = (customRange.to ?? customRange.from).getTime() + 24 * 60 * 60 * 1000 - 1;
-      return userCases.filter((c) => {
+      return base.filter((c) => {
         const t = new Date(c.filingDate).getTime();
         return t >= from && t <= to;
       });
     }
-    const cutoff = Date.now() - periodDays[dashboardPeriod] * 24 * 60 * 60 * 1000;
-    return userCases.filter((c) => new Date(c.filingDate).getTime() >= cutoff);
-  }, [userCases, dashboardPeriod, customRange]);
+    if (dashboardPeriod === "month") {
+      const now = new Date();
+      const mo = now.getMonth();
+      return base.filter((c) => new Date(`${c.filingDate}T12:00:00`).getMonth() === mo);
+    }
+    const [m0, m1] = quarterMonths[dashboardPeriod];
+    return base.filter((c) => {
+      const m = new Date(`${c.filingDate}T12:00:00`).getMonth();
+      return m >= m0 && m <= m1;
+    });
+  }, [userCases, dashboardYearNum, dashboardPeriod, customRange]);
 
   const handleCaseClick = (id: string) => {
     setSelectedCaseId(id);
@@ -128,9 +149,20 @@ const Index = () => {
         return (
           <>
             <div className="flex items-center justify-end mb-4">
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 <CalendarRange className="w-4 h-4 text-blue-600" />
-                <span className="text-sm text-blue-700 font-medium">Период:</span>
+                <span className="text-sm text-blue-700 font-medium">Год:</span>
+                <Select value={dashboardYear} onValueChange={(v) => setDashboardYear(v as DashboardYear)}>
+                  <SelectTrigger className="h-9 w-[130px]">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {(Object.keys(yearLabels) as DashboardYear[]).map((y) => (
+                      <SelectItem key={y} value={y}>{yearLabels[y]}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <span className="text-sm text-blue-700 font-medium ml-2">Период:</span>
                 <Select
                   value={dashboardPeriod}
                   onValueChange={(v) => {
@@ -138,8 +170,9 @@ const Index = () => {
                     setDashboardPeriod(next);
                     if (next !== "custom") setCustomRange(undefined);
                   }}
+                  disabled={dashboardYear === "all"}
                 >
-                  <SelectTrigger className="h-9 w-[180px]">
+                  <SelectTrigger className="h-9 w-[200px]">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -148,7 +181,7 @@ const Index = () => {
                     ))}
                   </SelectContent>
                 </Select>
-                {dashboardPeriod === "custom" && (
+                {dashboardPeriod === "custom" && dashboardYear !== "all" && (
                   <Popover>
                     <PopoverTrigger asChild>
                       <Button variant="outline" size="sm" className="h-9 gap-2 font-normal">
@@ -181,8 +214,8 @@ const Index = () => {
                 )}
               </div>
             </div>
-            <DashboardStats cases={dashboardCases} year={dashboardYear} onDrillDown={handleDrillDown} />
-            <DashboardCharts cases={dashboardCases} year={dashboardYear} />
+            <DashboardStats cases={dashboardCases} year={dashboardYearNum} onDrillDown={handleDrillDown} />
+            <DashboardCharts cases={dashboardCases} year={dashboardYearNum} />
           </>
         );
       case "cases":
@@ -195,9 +228,9 @@ const Index = () => {
                   variant="outline"
                   className="gap-2 border-blue-200 text-blue-700 hover:bg-blue-50"
                   disabled={filteredCases.length === 0}
-                  onClick={() => {
+                  onClick={async () => {
                     try {
-                      exportCasesToExcel(filteredCases);
+                      await exportCasesToExcel(filteredCases);
                       toast({
                         title: "Файл сформирован",
                         description: `Выгружено дел: ${filteredCases.length}.`,
@@ -214,7 +247,7 @@ const Index = () => {
                   <FileSpreadsheet className="w-4 h-4" />
                   Экспорт в Excel
                 </Button>
-                <AddCaseDialog user={user} />
+                {canAddCase(user) && <AddCaseDialog user={user} />}
               </div>
             </div>
             <CasesFilterBar filters={filters} onFiltersChange={setFilters} resultCount={filteredCases.length} lawyerOptions={lawyerDirectory} />

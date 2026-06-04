@@ -1006,11 +1006,11 @@ const CaseDetail = ({ caseId, onBack }: CaseDetailProps) => {
                   <Textarea className="mt-1 min-h-[80px]" value={litJ1} onChange={(e) => setLitJ1(e.target.value)} disabled={!canEdit || isRestricted} />
                 </div>
                 <div>
-                  <Label className="text-xs text-blue-600">Апелляция</Label>
+                  <Label className="text-xs text-blue-600">Дата рассмотрения в апелляционном порядке и результат</Label>
                   <Textarea className="mt-1 min-h-[60px]" value={litAppeal} onChange={(e) => setLitAppeal(e.target.value)} disabled={!canEdit || isRestricted} />
                 </div>
                 <div>
-                  <Label className="text-xs text-blue-600">Кассация</Label>
+                  <Label className="text-xs text-blue-600">Дата рассмотрения дела в кассационной порядке и результат</Label>
                   <Textarea className="mt-1 min-h-[60px]" value={litCass} onChange={(e) => setLitCass(e.target.value)} disabled={!canEdit || isRestricted} />
                 </div>
                 <div>
@@ -1020,15 +1020,15 @@ const CaseDetail = ({ caseId, onBack }: CaseDetailProps) => {
                 {caseData.partyRole === "plaintiff" && (
                   <>
                     <div>
-                      <Label className="text-xs text-blue-600">Заявление о выписке исп. листа (ПИР «истец» кол. 16)</Label>
+                      <Label className="text-xs text-blue-600">Дата направления в суд заявления о выписке исполнительного листа</Label>
                       <Textarea className="mt-1 min-h-[50px]" value={litWritReq} onChange={(e) => setLitWritReq(e.target.value)} disabled={!canEdit || isRestricted} />
                     </div>
                     <div>
-                      <Label className="text-xs text-blue-600">Сопроводительное письмо суда (ПИР «истец» кол. 17)</Label>
+                      <Label className="text-xs text-blue-600">Сопроводительного письма суда о направлении исполнительного листа</Label>
                       <Textarea className="mt-1 min-h-[50px]" value={litWritDisp} onChange={(e) => setLitWritDisp(e.target.value)} disabled={!canEdit || isRestricted} />
                     </div>
                     <div>
-                      <Label className="text-xs text-blue-600">Документ об исполнении (ПИР «истец» кол. 18)</Label>
+                      <Label className="text-xs text-blue-600">Дата и № документа, подтверждающего исполнение</Label>
                       <Textarea className="mt-1 min-h-[50px]" value={litExecProof} onChange={(e) => setLitExecProof(e.target.value)} disabled={!canEdit || isRestricted} />
                     </div>
                   </>
