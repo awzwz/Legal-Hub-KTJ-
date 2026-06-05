@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend, LineChart, Line, CartesianGrid } from "recharts";
 import { caseStatusLabels, disputeCategoryLabels, formatAmountShort, getLawyerStats, canViewLawyerStats, canViewAllBranches, isRealBranchNameForStats, normalizeBranchName, type LegalCase } from "@/data/mockData";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
@@ -8,7 +8,6 @@ import { Trophy, Award, Medal, Eye } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { DonutWithLegend } from "@/components/ui/donut-with-legend";
 import { useKpiBranches } from "@/hooks/useKpi";
-import LawyerRatingHelp from "@/components/dashboard/LawyerRatingHelp";
 
 const statusColors: Record<string, string> = {
   active: "hsl(38, 92%, 50%)",
@@ -262,7 +261,7 @@ const DashboardCharts = ({ cases, year }: { cases?: LegalCase[]; year?: number }
           </motion.div>
         )}
 
-        {showLawyerStats && <LawyerWorkloadCard cases={userCases} year={year} />}
+        {showLawyerStats && <LawyerWorkloadCard />}
       </div>
 
       <div className={cn("grid gap-4", showLawyerStats && branchRanking.length > 0 ? "grid-cols-1 lg:grid-cols-2" : "grid-cols-1")}>
@@ -410,135 +409,55 @@ function BranchKpiRanking({ year }: { year?: number }) {
   );
 }
 
-/** Аналитика по загруженности юристов — для директора при назначении дел. */
-function LawyerWorkloadCard({ cases, year }: { cases: LegalCase[]; year?: number }) {
-  const [viewMode, setViewMode] = useState<"current" | "period">("current");
-  // «current» — только активные сейчас (вне зависимости от выбранного года, т.к. это
-  // снимок «прямо сейчас»). «period» — статистика по выбранному году.
+/** Текущая загрузка юристов — только количество дел в работе. */
+function LawyerWorkloadCard() {
   const allCases = useCases();
-  const sourceCases = viewMode === "current" ? allCases : cases;
-  const stats = useMemo(() => getLawyerStats(sourceCases), [sourceCases]);
-  // Сортируем по релевантной метрике: для «current» — по activeNow desc;
-  // для «period» — по рейтинговому баллу.
-  const sorted = useMemo(() => {
-    return [...stats].sort((a, b) => {
-      if (viewMode === "current") return b.activeNow - a.activeNow;
-      return b.ratingScore - a.ratingScore || b.totalCases - a.totalCases;
-    });
-  }, [stats, viewMode]);
-
-  const workloadStyles: Record<string, { bar: string; text: string; bg: string; label: string }> = {
-    free:       { bar: "bg-emerald-500", text: "text-emerald-700", bg: "bg-emerald-50",  label: "Свободен" },
-    normal:     { bar: "bg-blue-500",    text: "text-blue-700",    bg: "bg-blue-50",     label: "Норма" },
-    busy:       { bar: "bg-amber-500",   text: "text-amber-700",   bg: "bg-amber-50",    label: "Высокая" },
-    overloaded: { bar: "bg-red-500",     text: "text-red-700",     bg: "bg-red-50",      label: "Перегружен" },
-  };
+  const rows = useMemo(
+    () =>
+      getLawyerStats(allCases)
+        .filter((lawyer) => lawyer.activeNow > 0)
+        .sort((a, b) => b.activeNow - a.activeNow || a.name.localeCompare(b.name, "ru")),
+    [allCases],
+  );
+  const totalActive = useMemo(
+    () => rows.reduce((sum, lawyer) => sum + lawyer.activeNow, 0),
+    [rows],
+  );
 
   return (
     <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.25 }} className="stat-card">
-      <div className="flex items-center justify-between gap-2 mb-3 flex-wrap">
-        <h3 className="text-sm font-semibold">{viewMode === "current" ? "Загруженность юристов" : "Рейтинг юристов"}</h3>
-        <div className="flex items-center gap-2">
-          {viewMode === "period" && <LawyerRatingHelp />}
-          <div className="flex items-center gap-1 text-[11px] bg-muted/50 rounded-md p-0.5">
-            <button
-              onClick={() => setViewMode("current")}
-              className={cn(
-                "px-2.5 py-1 rounded transition-colors",
-                viewMode === "current" ? "bg-white text-blue-700 font-semibold shadow-sm" : "text-muted-foreground hover:text-foreground",
-              )}
-              title="Активные дела прямо сейчас (независимо от года)"
-            >
-              Текущий момент
-            </button>
-            <button
-              onClick={() => setViewMode("period")}
-              className={cn(
-                "px-2.5 py-1 rounded transition-colors",
-                viewMode === "period" ? "bg-white text-blue-700 font-semibold shadow-sm" : "text-muted-foreground hover:text-foreground",
-              )}
-              title="Статистика за выбранный год"
-            >
-              За {year ?? "период"}
-            </button>
-          </div>
-        </div>
+      <div className="flex items-center justify-between gap-2 mb-3">
+        <h3 className="text-sm font-semibold">Дела в работе по юристам</h3>
+        <span className="rounded-md bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-800 tabular-nums">
+          {totalActive} всего
+        </span>
       </div>
       <p className="text-[11px] text-muted-foreground mb-3">
-        {viewMode === "current"
-          ? "Количество дел, находящихся на рассмотрении."
-          : `Итоговый балл за ${year ?? "выбранный год"} с учётом результата, объёма, сумм, риска и сроков.`}
+        Количество дел, которые сейчас находятся в работе или на исполнении.
       </p>
-      <div className="space-y-2 max-h-[480px] overflow-y-auto pr-1">
-        {sorted.length === 0 && (
+      <div className="divide-y divide-slate-100 max-h-[480px] overflow-y-auto pr-1">
+        {rows.length === 0 && (
           <p className="text-center py-6 text-sm text-muted-foreground">Нет данных по юристам</p>
         )}
-        {sorted.map((l, i) => {
-          const ws = workloadStyles[l.workloadLevel];
-          const isCurrent = viewMode === "current";
-          const barPct = isCurrent ? l.workloadPercent : l.compositeScore;
-          const barColor = isCurrent ? ws.bar :
-            l.compositeScore >= 70 ? "bg-emerald-500" :
-            l.compositeScore >= 45 ? "bg-amber-500" : "bg-red-400";
-          return (
-            <div key={l.name} className="flex items-start gap-3 p-2 rounded-md hover:bg-blue-50/40 transition-colors">
-              <div className="w-6 h-6 rounded-full bg-muted text-muted-foreground flex items-center justify-center text-[11px] font-bold flex-shrink-0 mt-0.5">
-                {i + 1}
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center justify-between gap-2">
-                  <div className="min-w-0 flex items-center gap-2">
-                    <span className="text-sm font-medium truncate">{l.name}</span>
-                    {!l.isActive && (
-                      <span className="shrink-0 rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold text-slate-600">
-                        Не работает
-                      </span>
-                    )}
-                  </div>
-                  {isCurrent && (
-                    <span className={cn("shrink-0 text-[10px] px-1.5 py-0.5 rounded font-semibold", ws.bg, ws.text)}>
-                      {ws.label}
-                    </span>
-                  )}
-                </div>
-                <div className="flex items-center gap-2 mt-1.5">
-                  <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
-                    <div className={cn("h-full rounded-full", barColor)} style={{ width: `${barPct}%` }} />
-                  </div>
-                  <span className="text-xs font-semibold tabular-nums w-10 text-right text-blue-900">
-                    {isCurrent ? `${l.activeNow}` : `${l.ratingScore}`}
-                  </span>
-                </div>
-                {isCurrent ? (
-                  <div className="flex gap-3 text-[11px] text-muted-foreground mt-1">
-                    <span>📋 {l.activeNow} активных</span>
-                    <span>✓ {l.won} побед</span>
-                    <span>📁 {l.totalCases} всего</span>
-                  </div>
-                ) : (
-                  <div className="flex gap-3 text-[11px] text-muted-foreground mt-1">
-                    <span>✓ {l.won}</span>
-                    <span>✗ {l.lost}</span>
-                    {year !== undefined && year < new Date().getFullYear() ? null : (
-                      <span>⧖ {l.activeNow} акт.</span>
-                    )}
-                    <span>{l.winRate}% win</span>
-                    <span>~{l.avgDays} дн.</span>
-                  </div>
-                )}
-              </div>
+        {rows.map((lawyer, index) => (
+          <div key={lawyer.name} className="flex items-center gap-3 py-2.5 hover:bg-blue-50/40 transition-colors">
+            <div className="w-6 h-6 rounded-full bg-muted text-muted-foreground flex items-center justify-center text-[11px] font-bold flex-shrink-0">
+              {index + 1}
             </div>
-          );
-        })}
+            <div className="min-w-0 flex-1 flex items-center gap-2">
+              <span className="text-sm font-medium truncate">{lawyer.name}</span>
+              {!lawyer.isActive && (
+                <span className="shrink-0 rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold text-slate-600">
+                  Не работает
+                </span>
+              )}
+            </div>
+            <span className="rounded-md bg-blue-50 px-2.5 py-1 text-sm font-semibold text-blue-800 tabular-nums">
+              {lawyer.activeNow}
+            </span>
+          </div>
+        ))}
       </div>
-      {viewMode === "current" && (
-        <div className="flex gap-3 mt-3 pt-3 border-t border-slate-100 text-[10px] text-muted-foreground flex-wrap">
-          <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-emerald-500" /> Свободен (0)</span>
-          <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-blue-500" /> Норма (1–3)</span>
-          <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-amber-500" /> Высокая (4–5)</span>
-          <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-red-500" /> Перегружен (&gt;5)</span>
-        </div>
-      )}
     </motion.div>
   );
 }
