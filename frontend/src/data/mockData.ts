@@ -452,12 +452,17 @@ const workloadLevelFor = (n: number): "free" | "normal" | "busy" | "overloaded" 
   return "overloaded";
 };
 
+const hiddenLawyerStatsNames = new Set(["Орак С.Б."]);
+
 export const getLawyerStats = (cases: LegalCase[], lawyerNames?: string[]) => {
   const names =
     lawyerNames && lawyerNames.length > 0
-      ? [...new Set(lawyerNames.map((n) => n.trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, "ru"))
+      ? [...new Set(lawyerNames.map((n) => n.trim()).filter(Boolean))]
       : getLawyerNamesFromCases(cases);
-  const rows = names.map((lawyer) => {
+  const visibleNames = names
+    .filter((name) => !hiddenLawyerStatsNames.has(name))
+    .sort((a, b) => a.localeCompare(b, "ru"));
+  const rows = visibleNames.map((lawyer) => {
     const lawyerCases = cases.filter((c) => c.assignedLawyer === lawyer);
     const isLawyerActive =
       lawyerCases.length === 0 ? true : lawyerCases.some((c) => c.assignedLawyerIsActive !== false);
