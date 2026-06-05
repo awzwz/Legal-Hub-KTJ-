@@ -2,17 +2,20 @@ from __future__ import annotations
 
 from datetime import date, datetime, timezone
 from decimal import Decimal, InvalidOperation
+from pathlib import Path
+import re
 from typing import Optional
 from uuid import UUID, uuid4
 
-from fastapi import HTTPException
+from fastapi import HTTPException, UploadFile
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.core.config import get_settings
 from app.core.deps import can_mutate, user_branch_filter
 from app.core.roles import Role
-from app.models import Branch, Case, CaseComment, CaseDocument, CaseEvent, CaseFinance, User
+from app.models import Branch, Case, CaseComment, CaseDocument, CaseEvent, CaseFinance, Notification, User
 
 # Все связи, нужные для маппинга `Case -> LegalCaseOut` без N+1.
 _CASE_RELATIONS = (
@@ -34,6 +37,8 @@ def _with_case_relations(stmt):
 
 
 VALID_DISPUTE_CATEGORIES = frozenset({"procurement", "transportation", "labor", "other", "mediation"})
+MAX_DOCUMENT_SIZE_BYTES = 50 * 1024 * 1024
+_SAFE_FILE_PART_RE = re.compile(r"[^A-Za-zА-Яа-яЁё0-9._ -]+")
 from app.schemas.legal_case import (
     CaseDocumentOut,
     CreateCommentBody,
@@ -117,6 +122,43 @@ _ROLE_LABELS: dict[str, str] = {
 
 def _role_label(user: User) -> str:
     return _ROLE_LABELS.get(user.role, "Юрист")
+
+
+def _document_storage_root() -> Path:
+    return Path(get_settings().case_document_storage_dir).expanduser().resolve()
+
+
+def _safe_file_part(value: str | None, default: str) -> str:
+    raw = Path(value or "").name.strip() or default
+    cleaned = _SAFE_FILE_PART_RE.sub("_", raw).strip(" ._")
+    return (cleaned or default)[:180]
+
+
+def _document_storage_path(storage_key: str) -> Path:
+    root = _document_storage_root()
+    path = (root / storage_key).resolve()
+    if path != root and root not in path.parents:
+        raise HTTPException(status_code=400, detail="Invalid document storage key")
+    return path
+
+
+def _doc_file_name(doc: CaseDocument) -> Optional[str]:
+    if not doc.storage_key:
+        return None
+    name = doc.storage_key.rsplit("/", 1)[-1]
+    prefix = f"{doc.id}_"
+    if name.startswith(prefix):
+        name = name[len(prefix) :]
+    return name or None
+
+
+def _download_file_name(doc: CaseDocument) -> str:
+    original = _doc_file_name(doc)
+    ext = Path(original or "").suffix
+    base = _safe_file_part(doc.title, "document")
+    if ext and not Path(base).suffix:
+        base = f"{base}{ext}"
+    return base[:220]
 
 
 async def create_case(db: AsyncSession, user: User, body: CreateLegalCaseBody) -> LegalCaseOut:
@@ -570,7 +612,7 @@ async def add_case_document(
     case_id: UUID,
     *,
     title: str,
-    file_name: Optional[str],
+    file: UploadFile,
 ) -> CaseDocumentOut:
     if not can_mutate(user):
         raise HTTPException(status_code=403, detail="Mutations forbidden for this role")
@@ -580,18 +622,31 @@ async def add_case_document(
     base_title = title.strip()
     if not base_title:
         raise HTTPException(status_code=400, detail="Title required")
-    fn = (file_name or "").strip()
-    display = base_title if not fn else f"{base_title} ({fn})"
-    display = display[:512]
+    original_file_name = _safe_file_part(file.filename, "document")
+    contents = await file.read(MAX_DOCUMENT_SIZE_BYTES + 1)
+    if len(contents) > MAX_DOCUMENT_SIZE_BYTES:
+        raise HTTPException(status_code=413, detail="Document is larger than 50 MB")
+    if not contents:
+        raise HTTPException(status_code=400, detail="Document file is empty")
 
+    doc_id = uuid4()
+    storage_key = f"{row.id}/{doc_id}_{original_file_name}"
+    storage_path = _document_storage_path(storage_key)
+    try:
+        storage_path.parent.mkdir(parents=True, exist_ok=True)
+        storage_path.write_bytes(contents)
+    except OSError as exc:
+        raise HTTPException(status_code=500, detail="Could not save document file") from exc
+
+    display = base_title[:512]
     doc = CaseDocument(
-        id=uuid4(),
+        id=doc_id,
         case_id=row.id,
         author_name=user.full_name,
         title=display,
-        storage_key=None,
-        mime_type=None,
-        size_bytes=0,
+        storage_key=storage_key,
+        mime_type=file.content_type or "application/octet-stream",
+        size_bytes=len(contents),
         uploaded_by=user.id,
         created_at=datetime.now(timezone.utc),
     )
@@ -604,14 +659,47 @@ async def add_case_document(
         entity_id=str(doc.id),
         details=f"Документ к делу {row.case_number}: {display[:120]}",
     )
-    await db.commit()
+    try:
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        try:
+            storage_path.unlink(missing_ok=True)
+        except OSError:
+            pass
+        raise
     await db.refresh(doc)
     return CaseDocumentOut(
         id=str(doc.id),
         title=doc.title,
         upload_date=doc.created_at.date().isoformat(),
         author=doc.author_name,
+        file_name=_doc_file_name(doc),
+        mime_type=doc.mime_type,
+        size_bytes=doc.size_bytes,
+        download_url=f"/api/v1/cases/{row.id}/documents/{doc.id}/download",
     )
+
+
+async def get_case_document_download(
+    db: AsyncSession,
+    user: User,
+    case_id: UUID,
+    document_id: UUID,
+) -> tuple[CaseDocument, Path, str]:
+    case = await _fetch_case_row(db, user, case_id)
+    if not case:
+        raise HTTPException(status_code=404, detail="Case not found")
+    r = await db.execute(
+        select(CaseDocument).where(CaseDocument.id == document_id, CaseDocument.case_id == case_id)
+    )
+    doc = r.scalar_one_or_none()
+    if not doc or not doc.storage_key:
+        raise HTTPException(status_code=404, detail="Document not found")
+    path = _document_storage_path(doc.storage_key)
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail="Document file not found")
+    return doc, path, _download_file_name(doc)
 
 
 async def remove_case_document(
@@ -632,6 +720,7 @@ async def remove_case_document(
     doc = r.scalar_one_or_none()
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
+    storage_path = _document_storage_path(doc.storage_key) if doc.storage_key else None
 
     if user.role != Role.DIRECTOR:
         if doc.uploaded_by is not None:
@@ -651,5 +740,60 @@ async def remove_case_document(
         entity_type="document",
         entity_id=str(document_id),
         details=f"Удалён документ из дела {case.case_number}",
+    )
+    await db.commit()
+    if storage_path is not None:
+        try:
+            storage_path.unlink(missing_ok=True)
+        except OSError:
+            pass
+
+
+async def delete_case(db: AsyncSession, user: User, case_id: UUID) -> None:
+    """Полное удаление дела со всеми связанными записями.
+
+    Большинство связанных таблиц объявлены с ``ON DELETE CASCADE`` (case_lawyers,
+    case_finances, case_litigation, payments, comments, documents, events,
+    procedural_deadlines, enforcement_proceedings, debt_recovery_entries),
+    поэтому достаточно удалить саму запись дела — БД зачистит остальное.
+
+    Notifications связаны через FK с ``ON DELETE SET NULL`` — обнуляем их
+    case_id явно, иначе на дашборде юриста повиснут осиротевшие алерты.
+    Audit-логи остаются — entity_id хранится строкой, нужен для расследований.
+
+    RBAC: удалять может только director или chief_lawyer. Юрист филиала и
+    бухгалтер — нет, чтобы случайно не снести улики до согласования.
+    """
+    if not can_mutate(user):
+        raise HTTPException(status_code=403, detail="Mutations forbidden for this role")
+    if user.role not in (Role.DIRECTOR, Role.CHIEF_LAWYER):
+        raise HTTPException(status_code=403, detail="Only director or chief lawyer can delete cases")
+    case = await _fetch_case_row(db, user, case_id)
+    if not case:
+        raise HTTPException(status_code=404, detail="Case not found")
+
+    case_number = case.case_number
+    case_label = case_number or str(case_id)[:8]
+
+    # 1) Обнуляем case_id в уведомлениях, чтобы они корректно отображались
+    # ("Дело удалено") и не пытались открыть несуществующее.
+    await db.execute(
+        Notification.__table__.update()
+        .where(Notification.case_id == case_id)
+        .values(case_id=None)
+    )
+
+    # 2) Удаляем само дело — CASCADE удалит финансы / комментарии / документы
+    # / события / litigation / payments / case_lawyers / procedural_deadlines /
+    # enforcement_proceedings / debt_recovery_entries / claims с этим case_id.
+    await db.execute(delete(Case).where(Case.id == case_id))
+
+    await write_audit_log(
+        db,
+        user,
+        action="delete",
+        entity_type="case",
+        entity_id=str(case_id),
+        details=f"Удалено дело {case_label} (со всеми связанными записями)",
     )
     await db.commit()

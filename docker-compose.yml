@@ -47,6 +47,7 @@ services:
       JWT_SECRET: docker-dev-only-change-me
       INTERNAL_API_KEY: docker-internal-key
       CORS_ORIGINS: http://127.0.0.1:8080,http://localhost:8080
+      CASE_DOCUMENT_STORAGE_DIR: /app/storage/case-documents
     depends_on:
       db:
         condition: service_healthy
@@ -74,6 +75,8 @@ services:
       dockerfile: Dockerfile
     command: ["uvicorn", "app.entrypoints.legal:app", "--host", "0.0.0.0", "--port", "8002"]
     environment: *api_env
+    volumes:
+      - ./storage/case-documents:/app/storage/case-documents
     ports:
       - "8002:8002"
     depends_on:

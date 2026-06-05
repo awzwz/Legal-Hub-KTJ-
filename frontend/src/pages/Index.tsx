@@ -91,7 +91,7 @@ const Index = () => {
     } else if (key === "settled") {
       setFilters({ ...defaultFilters, outcomeIn: ["settled"], presetLabel: "Медиативные соглашения" });
     } else if (key === "high_risk") {
-      setFilters({ ...defaultFilters, riskLevelIn: ["high"], presetLabel: "Высокая значимость" });
+      setFilters({ ...defaultFilters, riskLevelIn: ["high"], presetLabel: "Высокий риск" });
     } else if (key === "overdue_action") {
       setFilters({ ...defaultFilters, caseIdIn: caseIds ?? [], presetLabel: "Просроченные действия" });
     }

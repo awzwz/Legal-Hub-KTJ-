@@ -328,8 +328,8 @@ const AddCaseDialog = ({ user }: { user: User }) => {
                     <Select onValueChange={field.onChange} defaultValue={field.value}>
                       <FormControl><SelectTrigger><SelectValue placeholder="Выберите" /></SelectTrigger></FormControl>
                       <SelectContent>
-                        {Object.entries(caseTypeLabels).map(([k, v]) => (
-                          <SelectItem key={k} value={k}>{v}</SelectItem>
+                        {(["civil", "labor", "administrative", "criminal", "other"] as const).map((k) => (
+                          <SelectItem key={k} value={k}>{caseTypeLabels[k]}</SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
@@ -386,9 +386,19 @@ const AddCaseDialog = ({ user }: { user: User }) => {
                 <FormField control={form.control} name="filingDate" render={({ field }) => (
                   <FormItem className="md:col-span-2 lg:col-span-3">
                     <FormLabel>Дата подачи иска в суд</FormLabel>
-                    <Popover>
-                      <PopoverTrigger asChild>
-                        <FormControl>
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                      <FormControl>
+                        <Input
+                          type="date"
+                          className="w-full max-w-[180px] border-blue-200"
+                          value={field.value ? format(field.value, "yyyy-MM-dd") : ""}
+                          onChange={(e) => {
+                            field.onChange(e.target.value ? new Date(`${e.target.value}T12:00:00`) : undefined);
+                          }}
+                        />
+                      </FormControl>
+                      <Popover>
+                        <PopoverTrigger asChild>
                           <Button
                             type="button"
                             variant="outline"
@@ -400,12 +410,12 @@ const AddCaseDialog = ({ user }: { user: User }) => {
                             <CalendarIcon className="mr-2 h-4 w-4 shrink-0" />
                             {field.value ? format(field.value, "d MMMM yyyy", { locale: ru }) : "Выберите дату"}
                           </Button>
-                        </FormControl>
-                      </PopoverTrigger>
-                      <PopoverContent className="w-auto p-0" align="start">
-                        <Calendar mode="single" selected={field.value} onSelect={field.onChange} locale={ru} initialFocus />
-                      </PopoverContent>
-                    </Popover>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-auto p-0" align="start">
+                          <Calendar mode="single" selected={field.value} onSelect={field.onChange} locale={ru} initialFocus />
+                        </PopoverContent>
+                      </Popover>
+                    </div>
                     <FormMessage />
                   </FormItem>
                 )} />
@@ -450,7 +460,7 @@ const AddCaseDialog = ({ user }: { user: User }) => {
 
                 <FormField control={form.control} name="opponentType" render={({ field }) => (
                   <FormItem className="space-y-3">
-                    <FormLabel>Тип оппонента</FormLabel>
+                    <FormLabel>Оппонент</FormLabel>
                     <FormControl>
                       <RadioGroup onValueChange={field.onChange} defaultValue={field.value} className="flex gap-4">
                         <FormItem className="flex items-center space-x-2 space-y-0">
@@ -589,7 +599,7 @@ const AddCaseDialog = ({ user }: { user: User }) => {
                 
                 <FormField control={form.control} name="riskLevel" render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Уровень значимости</FormLabel>
+                    <FormLabel>Риск</FormLabel>
                     <Select onValueChange={field.onChange} defaultValue={field.value}>
                       <FormControl>
                         <SelectTrigger className={cn(

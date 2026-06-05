@@ -14,6 +14,16 @@ from app.schemas.legal_case import (
 )
 
 
+def _doc_file_name(storage_key: Optional[str], doc_id: str) -> Optional[str]:
+    if not storage_key:
+        return None
+    name = storage_key.rsplit("/", 1)[-1]
+    prefix = f"{doc_id}_"
+    if name.startswith(prefix):
+        name = name[len(prefix) :]
+    return name or None
+
+
 def _d(v: Union[date, datetime]) -> str:
     if isinstance(v, datetime):
         return v.date().isoformat()
@@ -27,10 +37,10 @@ def _dt(v: Optional[datetime]) -> Optional[str]:
 
 
 def compute_significance(row: Case) -> str:
-    """Динамическая значимость дела (low / medium / high).
+    """Динамический риск дела (low / medium / high).
 
     База — сумма иска. Поверх — модификаторы:
-      • КТЖ выиграл и дело закрыто → понижаем на 1 уровень (значимость уходит вниз).
+      • КТЖ выиграл и дело закрыто → понижаем на 1 уровень (риск уходит вниз).
       • Просрочка (days_overdue > 0) → повышаем на 1 уровень (срочность важнее размера).
       • Дело открытое (любой не-closed/withdrawn статус) И мы ответчик → удерживаем минимум medium
         даже для маленьких сумм — потому что любой проигрыш = реальные деньги наружу.
@@ -73,7 +83,7 @@ def compute_significance(row: Case) -> str:
 def effective_significance(row: Case) -> str:
     """User-facing significance.
 
-    Юристы управляют значимостью вручную. Авторасчет оставляем только как
+    Юристы управляют риском вручную. Авторасчет оставляем только как
     fallback для старых/битых строк, где значение не заполнено корректно.
     """
     manual = (row.risk_level or "").strip().lower()
@@ -104,6 +114,10 @@ def case_to_legal_case_out(row: Case) -> LegalCaseOut:
             title=d.title,
             upload_date=_d(d.created_at),
             author=d.author_name,
+            file_name=_doc_file_name(d.storage_key, str(d.id)),
+            mime_type=d.mime_type,
+            size_bytes=d.size_bytes or 0,
+            download_url=f"/api/v1/cases/{row.id}/documents/{d.id}/download" if d.storage_key else None,
         )
         for d in sorted(row.documents, key=lambda x: x.created_at)
     ]

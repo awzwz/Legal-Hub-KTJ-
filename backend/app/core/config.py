@@ -30,6 +30,7 @@ class Settings(BaseSettings):
     aws_access_key_id: Optional[str] = None
     aws_secret_access_key: Optional[str] = None
     aws_region: str = "us-east-1"
+    case_document_storage_dir: str = "/app/storage/case-documents"
 
     relax_auth: bool = False
     cors_origins: str = "http://localhost:8080,http://127.0.0.1:8080"

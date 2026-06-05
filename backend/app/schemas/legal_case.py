@@ -39,6 +39,10 @@ class CaseDocumentOut(CamelModel):
     title: str
     upload_date: str
     author: str
+    file_name: Optional[str] = None
+    mime_type: Optional[str] = None
+    size_bytes: int = 0
+    download_url: Optional[str] = None
 
 
 class CreateCaseDocumentBody(CamelModel):

@@ -35,7 +35,7 @@ const columns: Array<{ header: string; key: string; width: number; getValue: (c:
   { header: "Юрист", key: "assignedLawyer", width: 22, getValue: (c) => c.assignedLawyer },
   { header: "Филиал", key: "branch", width: 24, getValue: (c) => c.branch },
   { header: "Город", key: "city", width: 14, getValue: (c) => c.city },
-  { header: "Уровень значимости", key: "riskLevel", width: 18, getValue: (c) => riskLabels[c.riskLevel] ?? c.riskLevel },
+  { header: "Риск", key: "riskLevel", width: 18, getValue: (c) => riskLabels[c.riskLevel] ?? c.riskLevel },
   { header: "Дата подачи", key: "filingDate", width: 12, getValue: (c) => c.filingDate },
   {
     header: "Ближайшее заседание",

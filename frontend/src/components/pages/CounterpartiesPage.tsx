@@ -156,7 +156,7 @@ const CounterpartiesPage = ({ onCaseClick }: CounterpartiesPageProps) => {
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <input
             type="text"
-            placeholder="Поиск по названию или БИН..."
+            placeholder="По наименованию или БИН*"
             value={search}
             onChange={e => setSearch(e.target.value)}
             className="w-full pl-9 pr-4 py-2 text-sm rounded-md bg-muted border-0 outline-none focus:ring-2 focus:ring-ring placeholder:text-muted-foreground"
@@ -167,8 +167,8 @@ const CounterpartiesPage = ({ onCaseClick }: CounterpartiesPageProps) => {
           <SelectContent>
             <SelectItem value="all">Все контрагенты</SelectItem>
             <SelectItem value="with_debt">С остатком долга</SelectItem>
-            <SelectItem value="with_active">С активными делами</SelectItem>
-            <SelectItem value="paid_off">Полностью погасили</SelectItem>
+            <SelectItem value="with_active">Находящиеся на рассмотрении</SelectItem>
+            <SelectItem value="paid_off">Исполнено в полном объёме</SelectItem>
           </SelectContent>
         </Select>
         <Select value={sortBy} onValueChange={v => setSortBy(v as SortKey)}>

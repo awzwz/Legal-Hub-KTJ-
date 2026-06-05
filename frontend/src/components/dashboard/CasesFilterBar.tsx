@@ -1,5 +1,5 @@
 import { useState, useMemo } from "react";
-import { Search, Filter, X, Eye } from "lucide-react";
+import { Search, Filter, X, Eye, CalendarRange } from "lucide-react";
 import { caseOutcomeLabels, courtInstanceLabels, caseTypeLabels, partyRoleLabels, branches, canViewAllBranches, disputeCategoryLabels, visibleCaseStatuses, caseStatusGroup, type CaseStatus, type CaseOutcome, type CourtInstance, type CaseType, type PartyRole, type DisputeCategory, type LegalCase } from "@/data/mockData";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { cn } from "@/lib/utils";
@@ -7,8 +7,13 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 
+export type FilterYear = "all" | "2026" | "2025";
+export type FilterPeriod = "full" | "q1" | "q2" | "q3" | "q4";
+
 export interface CaseFilters {
   search: string;
+  year: FilterYear;
+  period: FilterPeriod;
   status: CaseStatus | "all";
   outcome: CaseOutcome | "all";
   courtInstance: CourtInstance | "all";
@@ -33,18 +38,41 @@ export interface CaseFilters {
 }
 
 const defaultFilters: CaseFilters = {
-  search: "", 
-  status: "all", 
+  search: "",
+  year: "2026",
+  period: "full",
+  status: "all",
   outcome: "all",
-  courtInstance: "all", 
-  caseType: "all", 
+  courtInstance: "all",
+  caseType: "all",
   partyRole: "all",
   disputeCategory: "all",
-  branch: "all", 
-  lawyer: "all", 
+  branch: "all",
+  lawyer: "all",
   overdueOnly: false,
   claimAmountFrom: "",
   claimAmountTo: ""
+};
+
+const yearLabels: Record<FilterYear, string> = {
+  "2026": "2026",
+  "2025": "2025",
+  all: "Все годы",
+};
+
+const periodLabels: Record<FilterPeriod, string> = {
+  full: "Весь год",
+  q1: "Q1 (январь–март)",
+  q2: "Q2 (апрель–июнь)",
+  q3: "Q3 (июль–сентябрь)",
+  q4: "Q4 (октябрь–декабрь)",
+};
+
+const quarterMonths: Record<"q1" | "q2" | "q3" | "q4", [number, number]> = {
+  q1: [0, 2],
+  q2: [3, 5],
+  q3: [6, 8],
+  q4: [9, 11],
 };
 
 interface CasesFilterBarProps {
@@ -70,6 +98,8 @@ const CasesFilterBar = ({ filters, onFiltersChange, resultCount, lawyerOptions }
     if (k === "claimAmountTo") return v !== "";
     if (k === "outcomeIn" || k === "statusIn" || k === "riskLevelIn" || k === "caseIdIn") return Array.isArray(v) && v.length > 0;
     if (k === "presetLabel") return false;
+    if (k === "year") return v !== "2026"; // dashboard default
+    if (k === "period") return v !== "full";
     return v !== "all";
   }).length;
 
@@ -84,16 +114,48 @@ const CasesFilterBar = ({ filters, onFiltersChange, resultCount, lawyerOptions }
 
   return (
     <div className="bg-white rounded-xl border border-[hsl(215,35%,90%)] shadow-sm p-4 space-y-4">
-      <div className="flex items-center gap-3">
-        <div className="relative flex-1 max-w-sm">
+      <div className="flex items-center gap-3 flex-wrap">
+        <div className="relative flex-1 min-w-[240px] max-w-sm">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[hsl(215,20%,55%)]" />
           <Input
             type="text"
-            placeholder="Поиск по номеру, БИН, компании..."
+            placeholder="Поиск по наименованию, БИН, номеру дела …"
             value={filters.search}
             onChange={e => update({ search: e.target.value })}
             className="w-full pl-9"
           />
+        </div>
+
+        <div className="flex items-center gap-2">
+          <CalendarRange className="w-4 h-4 text-blue-600" />
+          <span className="text-sm text-blue-700 font-medium">Год:</span>
+          <Select
+            value={filters.year}
+            onValueChange={(v) => {
+              const y = v as FilterYear;
+              update({ year: y, period: y === "all" ? "full" : filters.period });
+            }}
+          >
+            <SelectTrigger className="h-9 w-[120px]"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              {(Object.keys(yearLabels) as FilterYear[]).map((y) => (
+                <SelectItem key={y} value={y}>{yearLabels[y]}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <span className="text-sm text-blue-700 font-medium ml-1">Период:</span>
+          <Select
+            value={filters.period}
+            onValueChange={(v) => update({ period: v as FilterPeriod })}
+            disabled={filters.year === "all"}
+          >
+            <SelectTrigger className="h-9 w-[180px]"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              {(Object.keys(periodLabels) as FilterPeriod[]).map((p) => (
+                <SelectItem key={p} value={p}>{periodLabels[p]}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
 
         <Button
@@ -328,6 +390,17 @@ export const useFilteredCases = (filters: CaseFilters, cases?: LegalCase[]) => {
       if (filters.overdueOnly && c.daysOverdue === 0) return false;
       if (filters.claimAmountFrom !== "" && c.claimAmount < Number(filters.claimAmountFrom)) return false;
       if (filters.claimAmountTo !== "" && c.claimAmount > Number(filters.claimAmountTo)) return false;
+      // Год + Период по дате подачи иска.
+      if (filters.year !== "all") {
+        const filing = new Date(`${c.filingDate}T12:00:00`);
+        const filingYear = filing.getFullYear();
+        if (filingYear !== Number(filters.year)) return false;
+        if (filters.period !== "full") {
+          const m = filing.getMonth();
+          const [m0, m1] = quarterMonths[filters.period];
+          if (m < m0 || m > m1) return false;
+        }
+      }
       return true;
     });
   }, [filters, sourceCases]);

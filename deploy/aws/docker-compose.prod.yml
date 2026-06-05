@@ -65,6 +65,7 @@ services:
       CORS_ORIGINS: ${CORS_ORIGINS}
       COOKIE_SECURE: ${COOKIE_SECURE:-true}
       COOKIE_SAMESITE: ${COOKIE_SAMESITE:-strict}
+      CASE_DOCUMENT_STORAGE_DIR: ${CASE_DOCUMENT_STORAGE_DIR:-/app/storage/case-documents}
       LOG_JSON: "true"
     depends_on:
       db:
@@ -93,6 +94,8 @@ services:
     logging: *default_logging
     command: ["uvicorn", "app.entrypoints.legal:app", "--host", "0.0.0.0", "--port", "8002"]
     environment: *api_env
+    volumes:
+      - /opt/legalhub/case_documents:/app/storage/case-documents
     depends_on:
       db: { condition: service_healthy }
       redis: { condition: service_healthy }

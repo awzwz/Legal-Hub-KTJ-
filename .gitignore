@@ -29,6 +29,9 @@ backend/**/__pycache__/
 backend/.env
 backend/contracts/openapi/*.openapi.json
 
+# Uploaded case documents are runtime data, not source code.
+storage/
+
 # Deploy secrets (никогда не коммитим прод-секреты)
 deploy/aws/.env.prod
 deploy/aws/.env.*.local

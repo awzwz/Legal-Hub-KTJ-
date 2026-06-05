@@ -77,7 +77,7 @@ const typeConfig: Record<string, TypeConfig> = {
     icon: ShieldAlert,
     iconBg: "bg-orange-100",
     iconColor: "text-orange-700",
-    label: "Высокая значимость",
+    label: "Высокий риск",
     tab: "changes",
   },
   overdue: {

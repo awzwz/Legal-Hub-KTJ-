@@ -31,6 +31,10 @@ export interface CaseDocument {
   title: string;
   uploadDate: string;
   author: string;
+  fileName?: string | null;
+  mimeType?: string | null;
+  sizeBytes?: number;
+  downloadUrl?: string | null;
 }
 
 export interface CaseComment {
@@ -441,9 +445,9 @@ const isActiveNow = (c: LegalCase): boolean => {
 };
 
 const workloadLevelFor = (n: number): "free" | "normal" | "busy" | "overloaded" => {
-  if (n <= 3) return "free";
-  if (n <= 7) return "normal";
-  if (n <= 12) return "busy";
+  if (n === 0) return "free";
+  if (n <= 3) return "normal";
+  if (n <= 5) return "busy";
   return "overloaded";
 };
 
@@ -530,7 +534,8 @@ export const USER_STORAGE_KEY = "court_flow_current_user";
 // Permissions helper
 export const canViewAllCases = (user: User): boolean =>
   user.role === "director" || user.role === "chief_lawyer" || user.role === "accountant" || (user.branch || "").includes("Центральный аппарат");
-export const canViewAllBranches = (user: User): boolean => user.role === "director" || user.role === "chief_lawyer";
+export const canViewAllBranches = (user: User): boolean =>
+  user.role === "director" || user.role === "chief_lawyer" || (user.branch || "").includes("Центральный аппарат");
 export const canViewAllAnalytics = (user: User): boolean => user.role === "director" || user.role === "chief_lawyer";
 export const canViewAuditLog = (user: User): boolean => user.role === "director" || user.role === "chief_lawyer";
 export const canEditCase = (user: User, caseData: LegalCase): boolean => {
@@ -565,4 +570,3 @@ export const getFilteredCasesForUser = (user: User, cases: LegalCase[]): LegalCa
   }
   return [];
 };
-

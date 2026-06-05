@@ -205,7 +205,7 @@ const AnalyticsPage = () => {
         </motion.div>
 
         <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} className="stat-card">
-          <h3 className="text-sm font-semibold mb-3">Роль в суде</h3>
+          <h3 className="text-sm font-semibold mb-3">Стороны в суде</h3>
           <DonutWithLegend data={roleData} centerLabel="всего дел" />
         </motion.div>
 
