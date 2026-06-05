@@ -270,7 +270,16 @@ const AnalyticsPage = () => {
               {lawyerStats.map((l, i) => (
                 <tr key={l.name} className="border-b last:border-0">
                   <td className="px-4 py-3 font-medium">{i + 1}</td>
-                  <td className="px-4 py-3 font-medium">{l.name}</td>
+                  <td className="px-4 py-3 font-medium">
+                    <div className="flex items-center gap-2 min-w-[220px]">
+                      <span>{l.name}</span>
+                      {!l.isActive && (
+                        <span className="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-600">
+                          Не работает
+                        </span>
+                      )}
+                    </div>
+                  </td>
                   <td className="px-4 py-3 text-center">{l.totalCases}</td>
                   <td className="px-4 py-3 text-center text-success font-medium">{l.won}</td>
                   <td className="px-4 py-3 text-center text-overdue font-medium">{l.lost}</td>

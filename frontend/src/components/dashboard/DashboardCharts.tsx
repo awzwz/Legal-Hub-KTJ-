@@ -483,9 +483,16 @@ function LawyerWorkloadCard({ cases, year }: { cases: LegalCase[]; year?: number
               </div>
               <div className="flex-1 min-w-0">
                 <div className="flex items-center justify-between gap-2">
-                  <span className="text-sm font-medium truncate">{l.name}</span>
+                  <div className="min-w-0 flex items-center gap-2">
+                    <span className="text-sm font-medium truncate">{l.name}</span>
+                    {!l.isActive && (
+                      <span className="shrink-0 rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold text-slate-600">
+                        Не работает
+                      </span>
+                    )}
+                  </div>
                   {isCurrent && (
-                    <span className={cn("text-[10px] px-1.5 py-0.5 rounded font-semibold", ws.bg, ws.text)}>
+                    <span className={cn("shrink-0 text-[10px] px-1.5 py-0.5 rounded font-semibold", ws.bg, ws.text)}>
                       {ws.label}
                     </span>
                   )}

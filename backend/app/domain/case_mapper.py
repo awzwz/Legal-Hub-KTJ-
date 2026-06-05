@@ -95,6 +95,7 @@ def effective_significance(row: Case) -> str:
 def case_to_legal_case_out(row: Case) -> LegalCaseOut:
     fin = row.finances
     lawyer = row.assigned_lawyer.full_name if row.assigned_lawyer else ""
+    lawyer_is_active = bool(row.assigned_lawyer.is_active) if row.assigned_lawyer else False
     branch_name = row.branch.name
 
     payments = [
@@ -229,6 +230,7 @@ def case_to_legal_case_out(row: Case) -> LegalCaseOut:
         recovered_rep_expenses=float(fin.recovered_rep_expenses),
         dispute_category=row.dispute_category or "procurement",
         assigned_lawyer=lawyer,
+        assigned_lawyer_is_active=lawyer_is_active,
         branch_id=str(row.branch_id),
         assigned_lawyer_id=str(row.assigned_lawyer_id) if row.assigned_lawyer_id else None,
         branch=branch_name,

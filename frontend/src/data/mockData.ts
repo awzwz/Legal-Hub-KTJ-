@@ -135,6 +135,7 @@ export interface LegalCase {
   /** Раздел в шаблоне ПИР, в который дело попадёт при экспорте. По умолчанию — закупки. */
   disputeCategory?: DisputeCategory;
   assignedLawyer: string;
+  assignedLawyerIsActive?: boolean;
   /** UUID филиала (из API) */
   branchId?: string;
   /** UUID назначенного юриста (из API) */
@@ -458,6 +459,8 @@ export const getLawyerStats = (cases: LegalCase[], lawyerNames?: string[]) => {
       : getLawyerNamesFromCases(cases);
   const rows = names.map((lawyer) => {
     const lawyerCases = cases.filter((c) => c.assignedLawyer === lawyer);
+    const isLawyerActive =
+      lawyerCases.length === 0 ? true : lawyerCases.some((c) => c.assignedLawyerIsActive !== false);
     const won = lawyerCases.filter(
       (c) => c.outcome === "fully_satisfied" || c.outcome === "partially_satisfied" || c.outcome === "settled",
     ).length;
@@ -478,6 +481,7 @@ export const getLawyerStats = (cases: LegalCase[], lawyerNames?: string[]) => {
     const winRate = lawyerCases.length > 0 ? Math.round((won / Math.max(won + lost, 1)) * 100) : 0;
     return {
       name: lawyer,
+      isActive: isLawyerActive,
       totalCases: lawyerCases.length,
       won,
       lost,
