@@ -4,6 +4,7 @@ import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { useCases } from "@/hooks/useCases";
 import { useLawyerDirectory } from "@/hooks/useLawyerDirectory";
 import { useBranchesNames } from "@/hooks/useBranchesNames";
+import LawyerRatingHelp from "@/components/dashboard/LawyerRatingHelp";
 import { motion } from "framer-motion";
 import { CalendarRange, Eye } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -250,13 +251,17 @@ const AnalyticsPage = () => {
 
       {/* Lawyer efficiency table */}
       <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.25 }} className="stat-card mt-4">
-        <h3 className="text-sm font-semibold mb-4">Эффективность юристов</h3>
+        <div className="mb-4 flex items-center justify-between gap-2">
+          <h3 className="text-sm font-semibold">Рейтинг юристов</h3>
+          <LawyerRatingHelp />
+        </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b bg-muted/50">
                 <th className="table-header text-left px-4 py-3">#</th>
                 <th className="table-header text-left px-4 py-3">Юрист</th>
+                <th className="table-header text-center px-4 py-3">Балл</th>
                 <th className="table-header text-center px-4 py-3">Всего дел</th>
                 <th className="table-header text-center px-4 py-3">Удовлетворено</th>
                 <th className="table-header text-center px-4 py-3">Отказано</th>
@@ -279,6 +284,11 @@ const AnalyticsPage = () => {
                         </span>
                       )}
                     </div>
+                  </td>
+                  <td className="px-4 py-3 text-center">
+                    <span className="inline-flex min-w-10 justify-center rounded-md bg-blue-50 px-2 py-1 text-xs font-semibold tabular-nums text-blue-800">
+                      {l.ratingScore}
+                    </span>
                   </td>
                   <td className="px-4 py-3 text-center">{l.totalCases}</td>
                   <td className="px-4 py-3 text-center text-success font-medium">{l.won}</td>

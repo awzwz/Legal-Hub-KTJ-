@@ -8,6 +8,7 @@ import { Trophy, Award, Medal, Eye } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { DonutWithLegend } from "@/components/ui/donut-with-legend";
 import { useKpiBranches } from "@/hooks/useKpi";
+import LawyerRatingHelp from "@/components/dashboard/LawyerRatingHelp";
 
 const statusColors: Record<string, string> = {
   active: "hsl(38, 92%, 50%)",
@@ -418,11 +419,11 @@ function LawyerWorkloadCard({ cases, year }: { cases: LegalCase[]; year?: number
   const sourceCases = viewMode === "current" ? allCases : cases;
   const stats = useMemo(() => getLawyerStats(sourceCases), [sourceCases]);
   // Сортируем по релевантной метрике: для «current» — по activeNow desc;
-  // для «period» — по totalCases desc.
+  // для «period» — по рейтинговому баллу.
   const sorted = useMemo(() => {
     return [...stats].sort((a, b) => {
       if (viewMode === "current") return b.activeNow - a.activeNow;
-      return b.totalCases - a.totalCases;
+      return b.ratingScore - a.ratingScore || b.totalCases - a.totalCases;
     });
   }, [stats, viewMode]);
 
@@ -436,34 +437,37 @@ function LawyerWorkloadCard({ cases, year }: { cases: LegalCase[]; year?: number
   return (
     <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.25 }} className="stat-card">
       <div className="flex items-center justify-between gap-2 mb-3 flex-wrap">
-        <h3 className="text-sm font-semibold">Аналитика по загруженности юристов</h3>
-        <div className="flex items-center gap-1 text-[11px] bg-muted/50 rounded-md p-0.5">
-          <button
-            onClick={() => setViewMode("current")}
-            className={cn(
-              "px-2.5 py-1 rounded transition-colors",
-              viewMode === "current" ? "bg-white text-blue-700 font-semibold shadow-sm" : "text-muted-foreground hover:text-foreground",
-            )}
-            title="Активные дела прямо сейчас (независимо от года)"
-          >
-            Текущий момент
-          </button>
-          <button
-            onClick={() => setViewMode("period")}
-            className={cn(
-              "px-2.5 py-1 rounded transition-colors",
-              viewMode === "period" ? "bg-white text-blue-700 font-semibold shadow-sm" : "text-muted-foreground hover:text-foreground",
-            )}
-            title="Статистика за выбранный год"
-          >
-            За {year ?? "период"}
-          </button>
+        <h3 className="text-sm font-semibold">{viewMode === "current" ? "Загруженность юристов" : "Рейтинг юристов"}</h3>
+        <div className="flex items-center gap-2">
+          {viewMode === "period" && <LawyerRatingHelp />}
+          <div className="flex items-center gap-1 text-[11px] bg-muted/50 rounded-md p-0.5">
+            <button
+              onClick={() => setViewMode("current")}
+              className={cn(
+                "px-2.5 py-1 rounded transition-colors",
+                viewMode === "current" ? "bg-white text-blue-700 font-semibold shadow-sm" : "text-muted-foreground hover:text-foreground",
+              )}
+              title="Активные дела прямо сейчас (независимо от года)"
+            >
+              Текущий момент
+            </button>
+            <button
+              onClick={() => setViewMode("period")}
+              className={cn(
+                "px-2.5 py-1 rounded transition-colors",
+                viewMode === "period" ? "bg-white text-blue-700 font-semibold shadow-sm" : "text-muted-foreground hover:text-foreground",
+              )}
+              title="Статистика за выбранный год"
+            >
+              За {year ?? "период"}
+            </button>
+          </div>
         </div>
       </div>
       <p className="text-[11px] text-muted-foreground mb-3">
         {viewMode === "current"
           ? "Количество дел, находящихся на рассмотрении."
-          : `Объём и эффективность за ${year ?? "выбранный год"}. Полоса — composite score (winRate + объём + суммы + скорость).`}
+          : `Итоговый балл за ${year ?? "выбранный год"} с учётом результата, объёма, сумм, риска и сроков.`}
       </p>
       <div className="space-y-2 max-h-[480px] overflow-y-auto pr-1">
         {sorted.length === 0 && (
@@ -502,7 +506,7 @@ function LawyerWorkloadCard({ cases, year }: { cases: LegalCase[]; year?: number
                     <div className={cn("h-full rounded-full", barColor)} style={{ width: `${barPct}%` }} />
                   </div>
                   <span className="text-xs font-semibold tabular-nums w-10 text-right text-blue-900">
-                    {isCurrent ? `${l.activeNow}` : `${l.compositeScore}`}
+                    {isCurrent ? `${l.activeNow}` : `${l.ratingScore}`}
                   </span>
                 </div>
                 {isCurrent ? (

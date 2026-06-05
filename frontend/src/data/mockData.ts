@@ -454,6 +454,16 @@ const workloadLevelFor = (n: number): "free" | "normal" | "busy" | "overloaded" 
 
 const hiddenLawyerStatsNames = new Set(["Орак С.Б."]);
 
+const clampScore = (value: number) => Math.max(0, Math.min(100, value));
+
+const outcomeWeight = (outcome: CaseOutcome): number | null => {
+  if (outcome === "fully_satisfied") return 100;
+  if (outcome === "partially_satisfied") return 80;
+  if (outcome === "settled") return 70;
+  if (outcome === "denied" || outcome === "dismissed" || outcome === "returned") return 0;
+  return null;
+};
+
 export const getLawyerStats = (cases: LegalCase[], lawyerNames?: string[]) => {
   const names =
     lawyerNames && lawyerNames.length > 0
@@ -469,21 +479,32 @@ export const getLawyerStats = (cases: LegalCase[], lawyerNames?: string[]) => {
     const won = lawyerCases.filter(
       (c) => c.outcome === "fully_satisfied" || c.outcome === "partially_satisfied" || c.outcome === "settled",
     ).length;
-    const lost = lawyerCases.filter((c) => c.outcome === "denied" || c.outcome === "dismissed").length;
+    const lost = lawyerCases.filter((c) => c.outcome === "denied" || c.outcome === "dismissed" || c.outcome === "returned").length;
     const active = lawyerCases.filter((c) => ["active", "mediation", "suspended", "execution"].includes(c.status)).length;
     const activeNow = lawyerCases.filter(isActiveNow).length;
     const totalAmount = lawyerCases.reduce((s, c) => s + c.claimAmount, 0);
+    const highRiskCases = lawyerCases.filter((c) => c.riskLevel === "high").length;
+    const overdueCases = lawyerCases.filter((c) => (c.daysOverdue ?? 0) > 0).length;
+    const overdueDays = lawyerCases.reduce((s, c) => s + Math.max(0, c.daysOverdue ?? 0), 0);
+    const decidedWeights = lawyerCases
+      .map((c) => outcomeWeight(c.outcome))
+      .filter((v): v is number => v !== null);
     const avgDays =
-      lawyerCases.length > 0
+      decidedWeights.length > 0
         ? Math.round(
-            lawyerCases.reduce((s, c) => {
+            lawyerCases.filter((c) => outcomeWeight(c.outcome) !== null).reduce((s, c) => {
               const start = new Date(c.filingDate);
               const end = new Date(c.lastUpdated);
               return s + (end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24);
-            }, 0) / lawyerCases.length,
+            }, 0) / decidedWeights.length,
           )
         : 0;
     const winRate = lawyerCases.length > 0 ? Math.round((won / Math.max(won + lost, 1)) * 100) : 0;
+    const resolvedQuality = decidedWeights.length > 0
+      ? decidedWeights.reduce((s, v) => s + v, 0) / decidedWeights.length
+      : 50;
+    const confidence = decidedWeights.length / (decidedWeights.length + 3);
+    const resultScore = clampScore(50 + (resolvedQuality - 50) * confidence);
     return {
       name: lawyer,
       isActive: isLawyerActive,
@@ -492,9 +513,19 @@ export const getLawyerStats = (cases: LegalCase[], lawyerNames?: string[]) => {
       lost,
       active,
       activeNow,
+      decidedCases: decidedWeights.length,
+      highRiskCases,
+      overdueCases,
+      overdueDays,
       totalAmount,
       avgDays,
       winRate,
+      resultScore: Math.round(resultScore),
+      volumeScore: 0,
+      amountScore: 0,
+      riskScore: 0,
+      timelinessScore: 0,
+      ratingScore: 0,
       workloadLevel: workloadLevelFor(activeNow),
       workloadPercent: 0,
       compositeScore: 0,
@@ -503,18 +534,36 @@ export const getLawyerStats = (cases: LegalCase[], lawyerNames?: string[]) => {
 
   const maxActive = Math.max(1, ...rows.map((r) => r.activeNow));
   const maxTotal = Math.max(1, ...rows.map((r) => r.totalCases));
-  const maxAmount = Math.max(1, ...rows.map((r) => r.totalAmount));
+  const maxAmountLog = Math.max(1, ...rows.map((r) => Math.log1p(r.totalAmount)));
+  const maxRisk = Math.max(1, ...rows.map((r) => r.highRiskCases));
   const minAvgDays = Math.min(...rows.filter((r) => r.avgDays > 0).map((r) => r.avgDays), Infinity);
+  const maxAvgDays = Math.max(1, ...rows.map((r) => r.avgDays));
 
   for (const r of rows) {
     r.workloadPercent = Math.round((r.activeNow / maxActive) * 100);
-    const volumeScore = (r.totalCases / maxTotal) * 100;
-    const amountScore = (r.totalAmount / maxAmount) * 100;
-    const speedScore = r.avgDays > 0 && Number.isFinite(minAvgDays) ? Math.min(100, (minAvgDays / r.avgDays) * 100) : 0;
-    r.compositeScore = Math.round(r.winRate * 0.4 + volumeScore * 0.25 + amountScore * 0.2 + speedScore * 0.15);
+    r.volumeScore = Math.round((Math.log1p(r.totalCases) / Math.log1p(maxTotal)) * 100);
+    r.amountScore = Math.round((Math.log1p(r.totalAmount) / maxAmountLog) * 100);
+    r.riskScore = Math.round((Math.log1p(r.highRiskCases) / Math.log1p(maxRisk)) * 100);
+
+    const durationScore =
+      r.avgDays > 0 && Number.isFinite(minAvgDays) && maxAvgDays > minAvgDays
+        ? clampScore(100 - ((r.avgDays - minAvgDays) / (maxAvgDays - minAvgDays)) * 60)
+        : r.avgDays > 0
+          ? 85
+          : 60;
+    const overduePenalty = Math.min(55, r.overdueCases * 12 + Math.min(25, r.overdueDays / 3));
+    r.timelinessScore = Math.round(clampScore(durationScore - overduePenalty));
+    r.ratingScore = Math.round(
+      r.resultScore * 0.45 +
+      r.volumeScore * 0.2 +
+      r.amountScore * 0.15 +
+      r.riskScore * 0.1 +
+      r.timelinessScore * 0.1,
+    );
+    r.compositeScore = r.ratingScore;
   }
 
-  return rows.sort((a, b) => b.winRate - a.winRate);
+  return rows.sort((a, b) => b.ratingScore - a.ratingScore || b.totalCases - a.totalCases);
 };
 
 // Role system
