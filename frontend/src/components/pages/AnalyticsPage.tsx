@@ -7,12 +7,13 @@ import { useBranchesNames } from "@/hooks/useBranchesNames";
 import LawyerRatingHelp from "@/components/dashboard/LawyerRatingHelp";
 import { motion } from "framer-motion";
 import { CalendarRange, Eye } from "lucide-react";
-import { cn } from "@/lib/utils";
 import { DonutWithLegend } from "@/components/ui/donut-with-legend";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 type AnalyticsYear = "2026" | "2025" | "all";
 type AnalyticsPeriod = "full" | "q1" | "q2" | "q3" | "q4";
+type BranchSort = "total" | "won" | "lost" | "active";
 
 const yearLabels: Record<AnalyticsYear, string> = {
   "2026": "2026",
@@ -35,42 +36,6 @@ const quarterMonths: Record<"q1" | "q2" | "q3" | "q4", [number, number]> = {
   q4: [9, 11],
 };
 
-function pctLinear(value: number, max: number): number {
-  if (max <= 0 || value <= 0) return 0;
-  return Math.min(100, (value / max) * 100);
-}
-
-function MetricBar({
-  label,
-  value,
-  max,
-  className,
-  format,
-}: {
-  label: string;
-  value: number;
-  max: number;
-  className: string;
-  format?: (n: number) => string;
-}) {
-  const pct = pctLinear(value, max);
-  const shown = format ? format(value) : String(value);
-  return (
-    <div className="space-y-1">
-      <div className="flex items-baseline justify-between gap-2 text-xs">
-        <span className="text-muted-foreground shrink-0">{label}</span>
-        <span className="tabular-nums font-semibold text-slate-900">{shown}</span>
-      </div>
-      <div className="h-2.5 rounded-full bg-slate-100 overflow-hidden ring-1 ring-inset ring-slate-200/60">
-        <div
-          className={cn("h-full rounded-full transition-[width]", className)}
-          style={{ width: `${pct}%`, minWidth: value > 0 ? "6px" : undefined }}
-        />
-      </div>
-    </div>
-  );
-}
-
 const AnalyticsPage = () => {
   const { user } = useCurrentUser();
   const allCases = useCases();
@@ -81,6 +46,8 @@ const AnalyticsPage = () => {
   // Год + Период (общий фильтр для всех графиков на странице).
   const [year, setYearState] = useState<AnalyticsYear>("2026");
   const [period, setPeriod] = useState<AnalyticsPeriod>("full");
+  const [branchSort, setBranchSort] = useState<BranchSort>("total");
+  const [showEmptyBranches, setShowEmptyBranches] = useState(false);
   const setYear = (y: AnalyticsYear) => {
     setYearState(y);
     if (y === "all") setPeriod("full");
@@ -125,13 +92,16 @@ const AnalyticsPage = () => {
           lost: cases.filter((c) => c.outcome === "denied" || c.outcome === "dismissed").length,
           active: cases.filter((c) => ["active", "mediation", "suspended", "execution"].includes(c.status)).length,
         };
-      })
-      .sort((a, b) => b.total - a.total);
+      });
   }, [chartBranches, userCases]);
 
-  const maxWon = Math.max(1, ...branchCasesRows.map((r) => r.won));
-  const maxLost = Math.max(1, ...branchCasesRows.map((r) => r.lost));
-  const maxActive = Math.max(1, ...branchCasesRows.map((r) => r.active));
+  const visibleBranchRows = useMemo(
+    () =>
+      branchCasesRows
+        .filter((row) => showEmptyBranches || row.total > 0)
+        .sort((a, b) => b[branchSort] - a[branchSort] || b.total - a.total || a.branchFull.localeCompare(b.branchFull, "ru")),
+    [branchCasesRows, branchSort, showEmptyBranches],
+  );
 
   // Cases by type
   const typeColors = ["hsl(38, 92%, 50%)", "hsl(200, 60%, 50%)", "hsl(0, 72%, 51%)", "hsl(25, 30%, 40%)", "hsl(280, 45%, 52%)", "hsl(142, 71%, 45%)", "hsl(220, 14%, 52%)", "hsl(180, 60%, 45%)"];
@@ -211,8 +181,82 @@ const AnalyticsPage = () => {
         </motion.div>
 
         <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 }} className="stat-card lg:col-span-2">
-          <h3 className="text-sm font-semibold text-slate-900">Дела по филиалам (удовлетворено / отказано / в работе)</h3>
-          <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-600 mt-2 mb-4">
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+            <h3 className="text-sm font-semibold text-slate-900">Дела по филиалам</h3>
+            <div className="flex flex-wrap items-center gap-4">
+              <Select value={branchSort} onValueChange={(value) => setBranchSort(value as BranchSort)}>
+                <SelectTrigger className="h-8 w-[190px] text-xs" aria-label="Сортировка филиалов">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="total">По количеству дел</SelectItem>
+                  <SelectItem value="won">По удовлетворённым</SelectItem>
+                  <SelectItem value="lost">По отказам</SelectItem>
+                  <SelectItem value="active">По делам в работе</SelectItem>
+                </SelectContent>
+              </Select>
+              <label className="flex cursor-pointer items-center gap-2 text-xs text-slate-600">
+                <Checkbox
+                  checked={showEmptyBranches}
+                  onCheckedChange={(checked) => setShowEmptyBranches(checked === true)}
+                />
+                Показывать без дел
+              </label>
+            </div>
+          </div>
+          {visibleBranchRows.length === 0 ? (
+            <p className="py-10 text-center text-sm text-muted-foreground">Нет дел с указанным филиалом</p>
+          ) : (
+            <div className="overflow-x-auto rounded-md border border-slate-200">
+              <table className="w-full min-w-[880px] text-sm">
+                <thead>
+                  <tr className="border-b border-slate-200 bg-slate-50/80">
+                    <th className="table-header px-4 py-3 text-left">Филиал</th>
+                    <th className="table-header w-20 px-3 py-3 text-center">Всего</th>
+                    <th className="table-header w-32 px-3 py-3 text-center">Удовлетворено</th>
+                    <th className="table-header w-24 px-3 py-3 text-center">Отказано</th>
+                    <th className="table-header w-24 px-3 py-3 text-center">В работе</th>
+                    <th className="table-header w-[32%] min-w-[260px] px-4 py-3 text-left">Соотношение показателей</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {visibleBranchRows.map((row) => {
+                    const metricTotal = row.won + row.lost + row.active;
+                    const wonWidth = metricTotal > 0 ? (row.won / metricTotal) * 100 : 0;
+                    const lostWidth = metricTotal > 0 ? (row.lost / metricTotal) * 100 : 0;
+                    const activeWidth = metricTotal > 0 ? (row.active / metricTotal) * 100 : 0;
+
+                    return (
+                      <tr key={row.branchFull} className="border-b border-slate-100 last:border-0 hover:bg-blue-50/35">
+                        <td className="px-4 py-3 font-medium text-slate-900">{row.branchFull}</td>
+                        <td className="px-3 py-3 text-center font-semibold tabular-nums text-slate-900">{row.total}</td>
+                        <td className="px-3 py-3 text-center font-medium tabular-nums text-emerald-700">{row.won}</td>
+                        <td className="px-3 py-3 text-center font-medium tabular-nums text-red-700">{row.lost}</td>
+                        <td className="px-3 py-3 text-center font-medium tabular-nums text-amber-700">{row.active}</td>
+                        <td className="px-4 py-3">
+                          <div
+                            className="flex h-3 w-full overflow-hidden rounded-sm bg-slate-100 ring-1 ring-inset ring-slate-200"
+                            title={`Удовлетворено: ${row.won}; отказано: ${row.lost}; в работе: ${row.active}`}
+                          >
+                            {row.won > 0 && (
+                              <span className="h-full bg-[hsl(142,71%,45%)]" style={{ width: `${wonWidth}%` }} />
+                            )}
+                            {row.lost > 0 && (
+                              <span className="h-full bg-[hsl(0,72%,51%)]" style={{ width: `${lostWidth}%` }} />
+                            )}
+                            {row.active > 0 && (
+                              <span className="h-full bg-[hsl(38,92%,50%)]" style={{ width: `${activeWidth}%` }} />
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+          <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-slate-600">
             <span className="inline-flex items-center gap-1.5">
               <span className="h-2 w-2 shrink-0 rounded-full bg-[hsl(142,71%,45%)]" />
               Удовлетворено
@@ -226,26 +270,6 @@ const AnalyticsPage = () => {
               В работе
             </span>
           </div>
-          {branchCasesRows.length === 0 ? (
-            <p className="py-10 text-center text-sm text-muted-foreground">Нет дел с указанным филиалом</p>
-          ) : (
-            <div className="max-h-[min(70vh,720px)] overflow-y-auto overscroll-contain space-y-3 pr-2">
-              {branchCasesRows.map((r) => (
-                <div
-                  key={r.branchFull}
-                  className="rounded-xl border border-slate-200/90 bg-gradient-to-b from-white to-slate-50/80 p-4 shadow-sm"
-                >
-                  <p className="text-sm font-semibold leading-snug text-slate-900 break-words">{r.branchFull}</p>
-                  <p className="mt-1 text-xs text-muted-foreground tabular-nums">Всего дел: {r.total}</p>
-                  <div className="mt-4 grid gap-3 sm:grid-cols-3">
-                    <MetricBar label="Удовлетворено" value={r.won} max={maxWon} className="bg-[hsl(142,71%,45%)]" />
-                    <MetricBar label="Отказано" value={r.lost} max={maxLost} className="bg-[hsl(0,72%,51%)]" />
-                    <MetricBar label="В работе" value={r.active} max={maxActive} className="bg-[hsl(38,92%,50%)]" />
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
         </motion.div>
       </div>
 
