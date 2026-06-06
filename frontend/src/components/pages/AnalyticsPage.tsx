@@ -10,10 +10,11 @@ import { CalendarRange, Eye } from "lucide-react";
 import { DonutWithLegend } from "@/components/ui/donut-with-legend";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { getCompanyCaseResult, type CompanyCaseResult } from "@/lib/companyCaseResult";
 
 type AnalyticsYear = "2026" | "2025" | "all";
 type AnalyticsPeriod = "full" | "q1" | "q2" | "q3" | "q4";
-type BranchSort = "total" | "won" | "lost" | "active";
+type BranchSort = "total" | CompanyCaseResult;
 
 const yearLabels: Record<AnalyticsYear, string> = {
   "2026": "2026",
@@ -83,14 +84,14 @@ const AnalyticsPage = () => {
     return chartBranches
       .map((b) => {
         const cases = userCases.filter((c) => c.branch === b);
+        const results = cases.map(getCompanyCaseResult);
         return {
           branchFull: b,
           total: cases.length,
-          won: cases.filter(
-            (c) => c.outcome === "fully_satisfied" || c.outcome === "partially_satisfied" || c.outcome === "settled",
-          ).length,
-          lost: cases.filter((c) => c.outcome === "denied" || c.outcome === "dismissed").length,
-          active: cases.filter((c) => ["active", "mediation", "suspended", "execution"].includes(c.status)).length,
+          won: results.filter((result) => result === "won").length,
+          lost: results.filter((result) => result === "lost").length,
+          in_work: results.filter((result) => result === "in_work").length,
+          neutral: results.filter((result) => result === "neutral").length,
         };
       });
   }, [chartBranches, userCases]);
@@ -182,7 +183,7 @@ const AnalyticsPage = () => {
 
         <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 }} className="stat-card lg:col-span-2">
           <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-            <h3 className="text-sm font-semibold text-slate-900">Дела по филиалам</h3>
+            <h3 className="text-sm font-semibold text-slate-900">Результат для компании по филиалам</h3>
             <div className="flex flex-wrap items-center gap-4">
               <Select value={branchSort} onValueChange={(value) => setBranchSort(value as BranchSort)}>
                 <SelectTrigger className="h-8 w-[190px] text-xs" aria-label="Сортировка филиалов">
@@ -190,9 +191,10 @@ const AnalyticsPage = () => {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="total">По количеству дел</SelectItem>
-                  <SelectItem value="won">По удовлетворённым</SelectItem>
-                  <SelectItem value="lost">По отказам</SelectItem>
-                  <SelectItem value="active">По делам в работе</SelectItem>
+                  <SelectItem value="won">По выигранным</SelectItem>
+                  <SelectItem value="lost">По проигранным</SelectItem>
+                  <SelectItem value="in_work">По делам в работе</SelectItem>
+                  <SelectItem value="neutral">По нейтральным</SelectItem>
                 </SelectContent>
               </Select>
               <label className="flex cursor-pointer items-center gap-2 text-xs text-slate-600">
@@ -208,23 +210,24 @@ const AnalyticsPage = () => {
             <p className="py-10 text-center text-sm text-muted-foreground">Нет дел с указанным филиалом</p>
           ) : (
             <div className="overflow-x-auto rounded-md border border-slate-200">
-              <table className="w-full min-w-[880px] text-sm">
+              <table className="w-full min-w-[980px] text-sm">
                 <thead>
                   <tr className="border-b border-slate-200 bg-slate-50/80">
                     <th className="table-header px-4 py-3 text-left">Филиал</th>
                     <th className="table-header w-20 px-3 py-3 text-center">Всего</th>
-                    <th className="table-header w-32 px-3 py-3 text-center">Удовлетворено</th>
-                    <th className="table-header w-24 px-3 py-3 text-center">Отказано</th>
+                    <th className="table-header w-28 px-3 py-3 text-center">Выиграно</th>
+                    <th className="table-header w-28 px-3 py-3 text-center">Проиграно</th>
                     <th className="table-header w-24 px-3 py-3 text-center">В работе</th>
+                    <th className="table-header w-24 px-3 py-3 text-center">Нейтрально</th>
                     <th className="table-header w-[32%] min-w-[260px] px-4 py-3 text-left">Соотношение показателей</th>
                   </tr>
                 </thead>
                 <tbody>
                   {visibleBranchRows.map((row) => {
-                    const metricTotal = row.won + row.lost + row.active;
-                    const wonWidth = metricTotal > 0 ? (row.won / metricTotal) * 100 : 0;
-                    const lostWidth = metricTotal > 0 ? (row.lost / metricTotal) * 100 : 0;
-                    const activeWidth = metricTotal > 0 ? (row.active / metricTotal) * 100 : 0;
+                    const wonWidth = row.total > 0 ? (row.won / row.total) * 100 : 0;
+                    const lostWidth = row.total > 0 ? (row.lost / row.total) * 100 : 0;
+                    const inWorkWidth = row.total > 0 ? (row.in_work / row.total) * 100 : 0;
+                    const neutralWidth = row.total > 0 ? (row.neutral / row.total) * 100 : 0;
 
                     return (
                       <tr key={row.branchFull} className="border-b border-slate-100 last:border-0 hover:bg-blue-50/35">
@@ -232,11 +235,12 @@ const AnalyticsPage = () => {
                         <td className="px-3 py-3 text-center font-semibold tabular-nums text-slate-900">{row.total}</td>
                         <td className="px-3 py-3 text-center font-medium tabular-nums text-emerald-700">{row.won}</td>
                         <td className="px-3 py-3 text-center font-medium tabular-nums text-red-700">{row.lost}</td>
-                        <td className="px-3 py-3 text-center font-medium tabular-nums text-amber-700">{row.active}</td>
+                        <td className="px-3 py-3 text-center font-medium tabular-nums text-amber-700">{row.in_work}</td>
+                        <td className="px-3 py-3 text-center font-medium tabular-nums text-slate-600">{row.neutral}</td>
                         <td className="px-4 py-3">
                           <div
                             className="flex h-3 w-full overflow-hidden rounded-sm bg-slate-100 ring-1 ring-inset ring-slate-200"
-                            title={`Удовлетворено: ${row.won}; отказано: ${row.lost}; в работе: ${row.active}`}
+                            title={`Выиграно: ${row.won}; проиграно: ${row.lost}; в работе: ${row.in_work}; нейтрально: ${row.neutral}`}
                           >
                             {row.won > 0 && (
                               <span className="h-full bg-[hsl(142,71%,45%)]" style={{ width: `${wonWidth}%` }} />
@@ -244,8 +248,11 @@ const AnalyticsPage = () => {
                             {row.lost > 0 && (
                               <span className="h-full bg-[hsl(0,72%,51%)]" style={{ width: `${lostWidth}%` }} />
                             )}
-                            {row.active > 0 && (
-                              <span className="h-full bg-[hsl(38,92%,50%)]" style={{ width: `${activeWidth}%` }} />
+                            {row.in_work > 0 && (
+                              <span className="h-full bg-[hsl(38,92%,50%)]" style={{ width: `${inWorkWidth}%` }} />
+                            )}
+                            {row.neutral > 0 && (
+                              <span className="h-full bg-slate-400" style={{ width: `${neutralWidth}%` }} />
                             )}
                           </div>
                         </td>
@@ -259,15 +266,19 @@ const AnalyticsPage = () => {
           <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-slate-600">
             <span className="inline-flex items-center gap-1.5">
               <span className="h-2 w-2 shrink-0 rounded-full bg-[hsl(142,71%,45%)]" />
-              Удовлетворено
+              Выиграно
             </span>
             <span className="inline-flex items-center gap-1.5">
               <span className="h-2 w-2 shrink-0 rounded-full bg-[hsl(0,72%,51%)]" />
-              Отказано
+              Проиграно
             </span>
             <span className="inline-flex items-center gap-1.5">
               <span className="h-2 w-2 shrink-0 rounded-full bg-[hsl(38,92%,50%)]" />
               В работе
+            </span>
+            <span className="inline-flex items-center gap-1.5">
+              <span className="h-2 w-2 shrink-0 rounded-full bg-slate-400" />
+              Нейтрально (третьи лица и прочие исходы)
             </span>
           </div>
         </motion.div>
