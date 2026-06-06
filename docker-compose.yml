@@ -43,7 +43,7 @@ services:
       ENV: dev
       RELAX_AUTH: "true"
       AUTO_DDL: "false"
-      DEMO_SEED_ENABLED: "true"
+      DEMO_SEED_ENABLED: "false"
       JWT_SECRET: docker-dev-only-change-me
       INTERNAL_API_KEY: docker-internal-key
       CORS_ORIGINS: http://127.0.0.1:8080,http://localhost:8080
