@@ -1,3 +1,5 @@
+import { getCompanyCaseResult, summarizeCompanyResults } from "@/lib/companyCaseResult";
+
 export type CaseStatus = "active" | "mediation" | "suspended" | "execution" | "closed";
 export type CaseOutcome = "fully_satisfied" | "partially_satisfied" | "denied" | "settled" | "dismissed" | "pending" | "returned";
 export type CourtInstance = "first" | "appeal" | "cassation" | "supreme";
@@ -456,14 +458,6 @@ const hiddenLawyerStatsNames = new Set(["Орак С.Б."]);
 
 const clampScore = (value: number) => Math.max(0, Math.min(100, value));
 
-const outcomeWeight = (outcome: CaseOutcome): number | null => {
-  if (outcome === "fully_satisfied") return 100;
-  if (outcome === "partially_satisfied") return 80;
-  if (outcome === "settled") return 70;
-  if (outcome === "denied" || outcome === "dismissed" || outcome === "returned") return 0;
-  return null;
-};
-
 export const getLawyerStats = (cases: LegalCase[], lawyerNames?: string[]) => {
   const names =
     lawyerNames && lawyerNames.length > 0
@@ -474,46 +468,44 @@ export const getLawyerStats = (cases: LegalCase[], lawyerNames?: string[]) => {
     .sort((a, b) => a.localeCompare(b, "ru"));
   const rows = visibleNames.map((lawyer) => {
     const lawyerCases = cases.filter((c) => c.assignedLawyer === lawyer);
+    const ratingCases = lawyerCases.filter((c) => c.partyRole !== "third_party");
+    const companyResults = summarizeCompanyResults(lawyerCases);
+    const decidedCases = ratingCases.filter((c) => {
+      const result = getCompanyCaseResult(c);
+      return result === "won" || result === "lost";
+    });
     const isLawyerActive =
       lawyerCases.length === 0 ? true : lawyerCases.some((c) => c.assignedLawyerIsActive !== false);
-    const won = lawyerCases.filter(
-      (c) => c.outcome === "fully_satisfied" || c.outcome === "partially_satisfied" || c.outcome === "settled",
-    ).length;
-    const lost = lawyerCases.filter((c) => c.outcome === "denied" || c.outcome === "dismissed" || c.outcome === "returned").length;
-    const active = lawyerCases.filter((c) => ["active", "mediation", "suspended", "execution"].includes(c.status)).length;
     const activeNow = lawyerCases.filter(isActiveNow).length;
-    const totalAmount = lawyerCases.reduce((s, c) => s + c.claimAmount, 0);
-    const highRiskCases = lawyerCases.filter((c) => c.riskLevel === "high").length;
-    const overdueCases = lawyerCases.filter((c) => (c.daysOverdue ?? 0) > 0).length;
-    const overdueDays = lawyerCases.reduce((s, c) => s + Math.max(0, c.daysOverdue ?? 0), 0);
-    const decidedWeights = lawyerCases
-      .map((c) => outcomeWeight(c.outcome))
-      .filter((v): v is number => v !== null);
+    const totalAmount = ratingCases.reduce((s, c) => s + c.claimAmount, 0);
+    const highRiskCases = ratingCases.filter((c) => c.riskLevel === "high").length;
+    const overdueCases = ratingCases.filter((c) => (c.daysOverdue ?? 0) > 0).length;
+    const overdueDays = ratingCases.reduce((s, c) => s + Math.max(0, c.daysOverdue ?? 0), 0);
     const avgDays =
-      decidedWeights.length > 0
+      decidedCases.length > 0
         ? Math.round(
-            lawyerCases.filter((c) => outcomeWeight(c.outcome) !== null).reduce((s, c) => {
+            decidedCases.reduce((s, c) => {
               const start = new Date(c.filingDate);
               const end = new Date(c.lastUpdated);
               return s + (end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24);
-            }, 0) / decidedWeights.length,
+            }, 0) / decidedCases.length,
           )
         : 0;
-    const winRate = lawyerCases.length > 0 ? Math.round((won / Math.max(won + lost, 1)) * 100) : 0;
-    const resolvedQuality = decidedWeights.length > 0
-      ? decidedWeights.reduce((s, v) => s + v, 0) / decidedWeights.length
-      : 50;
-    const confidence = decidedWeights.length / (decidedWeights.length + 3);
+    const winRate = companyResults.winRate ?? 0;
+    const resolvedQuality = companyResults.winRate ?? 50;
+    const confidence = decidedCases.length / (decidedCases.length + 3);
     const resultScore = clampScore(50 + (resolvedQuality - 50) * confidence);
     return {
       name: lawyer,
       isActive: isLawyerActive,
-      totalCases: lawyerCases.length,
-      won,
-      lost,
-      active,
+      totalCases: companyResults.claimsTotal,
+      won: companyResults.won,
+      lost: companyResults.lost,
+      active: companyResults.inWork,
+      noDecision: companyResults.noDecision,
+      thirdParty: companyResults.thirdParty,
       activeNow,
-      decidedCases: decidedWeights.length,
+      decidedCases: decidedCases.length,
       highRiskCases,
       overdueCases,
       overdueDays,
@@ -553,13 +545,15 @@ export const getLawyerStats = (cases: LegalCase[], lawyerNames?: string[]) => {
           : 60;
     const overduePenalty = Math.min(55, r.overdueCases * 12 + Math.min(25, r.overdueDays / 3));
     r.timelinessScore = Math.round(clampScore(durationScore - overduePenalty));
-    r.ratingScore = Math.round(
-      r.resultScore * 0.45 +
-      r.volumeScore * 0.2 +
-      r.amountScore * 0.15 +
-      r.riskScore * 0.1 +
-      r.timelinessScore * 0.1,
-    );
+    r.ratingScore = r.totalCases === 0
+      ? 0
+      : Math.round(
+          r.resultScore * 0.45 +
+          r.volumeScore * 0.2 +
+          r.amountScore * 0.15 +
+          r.riskScore * 0.1 +
+          r.timelinessScore * 0.1,
+        );
     r.compositeScore = r.ratingScore;
   }
 

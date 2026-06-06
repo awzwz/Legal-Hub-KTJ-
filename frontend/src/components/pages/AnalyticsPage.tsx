@@ -328,11 +328,12 @@ const AnalyticsPage = () => {
                 <th className="table-header text-left px-4 py-3">#</th>
                 <th className="table-header text-left px-4 py-3">Юрист</th>
                 <th className="table-header text-center px-4 py-3">Балл</th>
-                <th className="table-header text-center px-4 py-3">Всего дел</th>
-                <th className="table-header text-center px-4 py-3">Удовлетворено</th>
-                <th className="table-header text-center px-4 py-3">Отказано</th>
+                <th className="table-header text-center px-4 py-3" title="Истец + ответчик; дела третьих лиц не входят">Исков (X)</th>
+                <th className="table-header text-center px-4 py-3">Выиграно</th>
+                <th className="table-header text-center px-4 py-3">Проиграно</th>
                 <th className="table-header text-center px-4 py-3">В работе</th>
-                <th className="table-header text-center px-4 py-3">% удовлетворения</th>
+                <th className="table-header text-center px-4 py-3">Без решения</th>
+                <th className="table-header text-center px-4 py-3">% побед</th>
                 <th className="table-header text-center px-4 py-3">Ср. дней</th>
                 <th className="table-header text-right px-4 py-3">Общая сумма</th>
               </tr>
@@ -360,6 +361,7 @@ const AnalyticsPage = () => {
                   <td className="px-4 py-3 text-center text-success font-medium">{l.won}</td>
                   <td className="px-4 py-3 text-center text-overdue font-medium">{l.lost}</td>
                   <td className="px-4 py-3 text-center">{l.active}</td>
+                  <td className="px-4 py-3 text-center text-slate-600">{l.noDecision}</td>
                   <td className="px-4 py-3 text-center">
                     <div className="flex items-center justify-center gap-2">
                       <div className="w-12 h-1.5 bg-muted rounded-full overflow-hidden">
