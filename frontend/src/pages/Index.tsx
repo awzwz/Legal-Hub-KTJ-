@@ -79,8 +79,27 @@ const Index = () => {
 
   /** Клик по карточке «Обзора» — переключаемся на реестр дел с применённым пресет-фильтром. */
   const handleDrillDown = useCallback((payload: DrillDownPayload) => {
-    const { key, caseIds } = payload;
-    if (key === "all") {
+    const { key, caseIds, partyRole } = payload;
+    const labels: Record<DrillDownPayload["key"], string> = {
+      all: "Всего дел",
+      won: "Удовлетворено",
+      lost: "Отказано",
+      settled: "Медиативные соглашения",
+      in_progress: "В работе",
+      high_risk: "Высокий риск",
+      overdue_action: "Просроченные действия",
+    };
+    const roleLabel = partyRole === "plaintiff" ? "Истец" : partyRole === "defendant" ? "Ответчик" : "";
+
+    if (caseIds !== undefined) {
+      setFilters({
+        ...defaultFilters,
+        year: "all",
+        partyRole: partyRole ?? "all",
+        caseIdIn: caseIds,
+        presetLabel: roleLabel ? `${roleLabel}: ${labels[key]}` : labels[key],
+      });
+    } else if (key === "all") {
       setFilters(defaultFilters);
     } else if (key === "won") {
       setFilters({ ...defaultFilters, outcomeIn: ["fully_satisfied", "partially_satisfied"], presetLabel: "Удовлетворено" });

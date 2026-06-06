@@ -4,6 +4,11 @@ import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { useKpiOverview } from "@/hooks/useKpi";
 import { useProceduralDeadlines } from "@/hooks/useProceduralDeadlines";
 import { cn } from "@/lib/utils";
+import {
+  getDashboardOverviewCases,
+  type DashboardOverviewKey,
+  type DashboardOverviewRole,
+} from "@/lib/dashboardOverview";
 import { motion } from "framer-motion";
 
 const StatCard = ({ icon: Icon, label, value, sub, trend, variant = "default", delay = 0, footer, onClick }: {
@@ -56,11 +61,12 @@ const StatCard = ({ icon: Icon, label, value, sub, trend, variant = "default", d
   );
 };
 
-export type DrillDownKey = "all" | "won" | "lost" | "in_progress" | "settled" | "high_risk" | "overdue_action";
+export type DrillDownKey = DashboardOverviewKey | "high_risk" | "overdue_action";
 
 export interface DrillDownPayload {
   key: DrillDownKey;
-  /** Для key='overdue_action' — список id дел c просроченными дедлайнами (вычисляется внутри DashboardStats). */
+  partyRole?: DashboardOverviewRole;
+  /** Точный набор дел, показанный карточкой с учётом роли, года и выбранного периода. */
   caseIds?: string[];
 }
 
@@ -77,16 +83,6 @@ const DashboardStats = ({ cases, year, onDrillDown }: { cases?: LegalCase[]; yea
   // дела, у которых процесс ещё не закрыт (взыскание идёт, активны, приостановлены).
   // Фактический разрез: счётчики по outcome отдельно для каждой роли.
   // Используется в блоках «ОБЗОР · ИСТЕЦ» и «ОБЗОР · ОТВЕТЧИК».
-  const calcRoleCounts = (casesArr: LegalCase[]) => {
-    const won = casesArr.filter(c => c.outcome === "fully_satisfied" || c.outcome === "partially_satisfied").length;
-    const lost = casesArr.filter(c => ["denied", "dismissed", "returned"].includes(c.outcome)).length;
-    const settled = casesArr.filter(c => c.outcome === "settled").length;
-    const inProgress = casesArr.filter(c => {
-      const note = (c.litigation?.damageRecoveryNote || "").trim().toLowerCase();
-      return c.status === "execution" && note === "на исполнении";
-    }).length;
-    return { won, lost, settled, inProgress, total: casesArr.length };
-  };
   // Агрегаты для нижних блоков (требует внимания и т.п.)
   const wonCases = userCases.filter(c => c.outcome === "fully_satisfied" || c.outcome === "partially_satisfied").length;
   const lostCases = userCases.filter(c => ["denied", "dismissed", "returned"].includes(c.outcome)).length;
@@ -105,7 +101,8 @@ const DashboardStats = ({ cases, year, onDrillDown }: { cases?: LegalCase[]; yea
     return acc;
   }, {} as Record<string, number>);
   const overdueByCaseSorted = Object.entries(overdueByCase).sort((a, b) => b[1] - a[1]).slice(0, 5);
-  const highRiskCases = userCases.filter(c => c.riskLevel === "high").length;
+  const highRiskCaseList = userCases.filter(c => c.riskLevel === "high");
+  const highRiskCases = highRiskCaseList.length;
 
   // KPI юр. службы (формулы по согласованию с юристом).
   const { data: kpi } = useKpiOverview(year);
@@ -149,8 +146,15 @@ const DashboardStats = ({ cases, year, onDrillDown }: { cases?: LegalCase[]; yea
   const defFin = calcFinanceDefendant(defendantCases);
   const plFin = calcFinancePlaintiff(plaintiffCases);
 
-  const plCounts = calcRoleCounts(plaintiffCases);
-  const defCounts = calcRoleCounts(defendantCases);
+  const calcRoleGroups = (partyRole: DashboardOverviewRole) => ({
+    all: getDashboardOverviewCases(userCases, partyRole, "all"),
+    won: getDashboardOverviewCases(userCases, partyRole, "won"),
+    lost: getDashboardOverviewCases(userCases, partyRole, "lost"),
+    settled: getDashboardOverviewCases(userCases, partyRole, "settled"),
+    in_progress: getDashboardOverviewCases(userCases, partyRole, "in_progress"),
+  });
+  const plGroups = calcRoleGroups("plaintiff");
+  const defGroups = calcRoleGroups("defendant");
   const isRestricted = !canViewAllCases(user);
 
   const pctOf = (n: number, d: number) => `${Math.round((n / Math.max(d, 1)) * 100)}% от решённых`;
@@ -170,20 +174,25 @@ const DashboardStats = ({ cases, year, onDrillDown }: { cases?: LegalCase[]; yea
         <span className="text-xs text-blue-500">Обновлено: {new Date().toLocaleDateString("ru-RU")}</span>
       </div>
       {[
-        { label: "Истец", counts: plCounts, baseDelay: 0 },
-        { label: "Ответчик", counts: defCounts, baseDelay: 0.2 },
-      ].map(({ label, counts, baseDelay }) => {
-        const decided = counts.won + counts.lost + counts.settled;
+        { label: "Истец", partyRole: "plaintiff" as const, groups: plGroups, baseDelay: 0 },
+        { label: "Ответчик", partyRole: "defendant" as const, groups: defGroups, baseDelay: 0.2 },
+      ].map(({ label, partyRole, groups, baseDelay }) => {
+        const decided = groups.won.length + groups.lost.length + groups.settled.length;
         const pct = (n: number) => `${Math.round((n / Math.max(decided, 1)) * 100)}%`;
+        const drillDown = (key: DashboardOverviewKey) => onDrillDown?.({
+          key,
+          partyRole,
+          caseIds: groups[key].map((legalCase) => legalCase.id),
+        });
         return (
           <div key={label} className="mb-4">
-            <p className="text-xs uppercase tracking-wide text-blue-500 font-semibold mb-2">{label} ({counts.total})</p>
+            <p className="text-xs uppercase tracking-wide text-blue-500 font-semibold mb-2">{label} ({groups.all.length})</p>
             <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
-              <StatCard icon={Briefcase} label="Всего дел" value={counts.total.toString()} delay={baseDelay} onClick={onDrillDown ? () => onDrillDown({ key: "all" }) : undefined} />
-              <StatCard icon={CheckCircle2} label="Удовлетворено" value={counts.won.toString()} variant="success" trend={{ value: pct(counts.won), up: true }} delay={baseDelay + 0.05} onClick={onDrillDown ? () => onDrillDown({ key: "won" }) : undefined} />
-              <StatCard icon={Scale} label="Отказано" value={counts.lost.toString()} variant="overdue" trend={{ value: pct(counts.lost), up: false }} delay={baseDelay + 0.1} onClick={onDrillDown ? () => onDrillDown({ key: "lost" }) : undefined} />
-              <StatCard icon={Handshake} label="Медиативные соглашения" value={counts.settled.toString()} variant="mediation" trend={{ value: pct(counts.settled), up: true }} delay={baseDelay + 0.15} onClick={onDrillDown ? () => onDrillDown({ key: "settled" }) : undefined} />
-              <StatCard icon={Gavel} label="В работе" value={counts.inProgress.toString()} variant="warning" delay={baseDelay + 0.2} onClick={onDrillDown ? () => onDrillDown({ key: "in_progress" }) : undefined} />
+              <StatCard icon={Briefcase} label="Всего дел" value={groups.all.length.toString()} delay={baseDelay} onClick={onDrillDown ? () => drillDown("all") : undefined} />
+              <StatCard icon={CheckCircle2} label="Удовлетворено" value={groups.won.length.toString()} variant="success" trend={{ value: pct(groups.won.length), up: true }} delay={baseDelay + 0.05} onClick={onDrillDown ? () => drillDown("won") : undefined} />
+              <StatCard icon={Scale} label="Отказано" value={groups.lost.length.toString()} variant="overdue" trend={{ value: pct(groups.lost.length), up: false }} delay={baseDelay + 0.1} onClick={onDrillDown ? () => drillDown("lost") : undefined} />
+              <StatCard icon={Handshake} label="Медиативные соглашения" value={groups.settled.length.toString()} variant="mediation" trend={{ value: pct(groups.settled.length), up: true }} delay={baseDelay + 0.15} onClick={onDrillDown ? () => drillDown("settled") : undefined} />
+              <StatCard icon={Gavel} label="В работе" value={groups.in_progress.length.toString()} variant="warning" delay={baseDelay + 0.2} onClick={onDrillDown ? () => drillDown("in_progress") : undefined} />
             </div>
           </div>
         );
@@ -249,7 +258,7 @@ const DashboardStats = ({ cases, year, onDrillDown }: { cases?: LegalCase[]; yea
           })()}
           {(() => {
             const riskClick = onDrillDown && highRiskCases > 0
-              ? () => onDrillDown({ key: "high_risk" })
+              ? () => onDrillDown({ key: "high_risk", caseIds: highRiskCaseList.map((legalCase) => legalCase.id) })
               : undefined;
             return (
           <div

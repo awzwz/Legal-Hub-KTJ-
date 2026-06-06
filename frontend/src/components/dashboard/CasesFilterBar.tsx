@@ -1,8 +1,9 @@
 import { useState, useMemo } from "react";
 import { Search, Filter, X, Eye, CalendarRange } from "lucide-react";
-import { caseOutcomeLabels, courtInstanceLabels, caseTypeLabels, partyRoleLabels, branches, canViewAllBranches, disputeCategoryLabels, visibleCaseStatuses, caseStatusGroup, type CaseStatus, type CaseOutcome, type CourtInstance, type CaseType, type PartyRole, type DisputeCategory, type LegalCase } from "@/data/mockData";
+import { caseOutcomeLabels, courtInstanceLabels, caseTypeLabels, partyRoleLabels, branches, canViewAllBranches, disputeCategoryLabels, visibleCaseStatuses, type CaseStatus, type CaseOutcome, type CourtInstance, type CaseType, type PartyRole, type DisputeCategory, type LegalCase } from "@/data/mockData";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { cn } from "@/lib/utils";
+import { filterCases } from "@/lib/filterCases";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -68,13 +69,6 @@ const periodLabels: Record<FilterPeriod, string> = {
   q4: "Q4 (октябрь–декабрь)",
 };
 
-const quarterMonths: Record<"q1" | "q2" | "q3" | "q4", [number, number]> = {
-  q1: [0, 2],
-  q2: [3, 5],
-  q3: [6, 8],
-  q4: [9, 11],
-};
-
 interface CasesFilterBarProps {
   filters: CaseFilters;
   onFiltersChange: (filters: CaseFilters) => void;
@@ -96,7 +90,8 @@ const CasesFilterBar = ({ filters, onFiltersChange, resultCount, lawyerOptions }
     if (k === "overdueOnly") return v === true;
     if (k === "claimAmountFrom") return v !== "";
     if (k === "claimAmountTo") return v !== "";
-    if (k === "outcomeIn" || k === "statusIn" || k === "riskLevelIn" || k === "caseIdIn") return Array.isArray(v) && v.length > 0;
+    if (k === "caseIdIn") return Array.isArray(v);
+    if (k === "outcomeIn" || k === "statusIn" || k === "riskLevelIn") return Array.isArray(v) && v.length > 0;
     if (k === "presetLabel") return false;
     if (k === "year") return v !== "2026"; // dashboard default
     if (k === "period") return v !== "full";
@@ -358,50 +353,5 @@ const CasesFilterBar = ({ filters, onFiltersChange, resultCount, lawyerOptions }
 export { CasesFilterBar, defaultFilters };
 
 export const useFilteredCases = (filters: CaseFilters, cases?: LegalCase[]) => {
-  const sourceCases = cases ?? [];
-  return useMemo(() => {
-    return sourceCases.filter(c => {
-      if (filters.search) {
-        const q = filters.search.toLowerCase();
-        const match = c.caseNumber.toLowerCase().includes(q) || c.company.toLowerCase().includes(q) || c.companyBIN.includes(q) || c.assignedLawyer.toLowerCase().includes(q) || c.defendant.toLowerCase().includes(q) || c.plaintiff.toLowerCase().includes(q);
-        if (!match) return false;
-      }
-      if (filters.statusIn && filters.statusIn.length > 0) {
-        if (!filters.statusIn.includes(c.status)) return false;
-      } else if (filters.status !== "all") {
-        const targetGroup = caseStatusGroup[filters.status as CaseStatus];
-        if (caseStatusGroup[c.status] !== targetGroup) return false;
-      }
-      if (filters.outcomeIn && filters.outcomeIn.length > 0) {
-        if (!filters.outcomeIn.includes(c.outcome)) return false;
-      } else if (filters.outcome !== "all" && c.outcome !== filters.outcome) return false;
-      if (filters.riskLevelIn && filters.riskLevelIn.length > 0) {
-        if (!filters.riskLevelIn.includes(c.riskLevel as "high" | "medium" | "low")) return false;
-      }
-      if (filters.caseIdIn && filters.caseIdIn.length > 0) {
-        if (!filters.caseIdIn.includes(c.id)) return false;
-      }
-      if (filters.courtInstance !== "all" && c.courtInstance !== filters.courtInstance) return false;
-      if (filters.caseType !== "all" && c.caseType !== filters.caseType) return false;
-      if (filters.partyRole !== "all" && c.partyRole !== filters.partyRole) return false;
-      if (filters.disputeCategory !== "all" && (c.disputeCategory ?? "procurement") !== filters.disputeCategory) return false;
-      if (filters.branch !== "all" && c.branch !== filters.branch) return false;
-      if (filters.lawyer !== "all" && c.assignedLawyer !== filters.lawyer) return false;
-      if (filters.overdueOnly && c.daysOverdue === 0) return false;
-      if (filters.claimAmountFrom !== "" && c.claimAmount < Number(filters.claimAmountFrom)) return false;
-      if (filters.claimAmountTo !== "" && c.claimAmount > Number(filters.claimAmountTo)) return false;
-      // Год + Период по дате подачи иска.
-      if (filters.year !== "all") {
-        const filing = new Date(`${c.filingDate}T12:00:00`);
-        const filingYear = filing.getFullYear();
-        if (filingYear !== Number(filters.year)) return false;
-        if (filters.period !== "full") {
-          const m = filing.getMonth();
-          const [m0, m1] = quarterMonths[filters.period];
-          if (m < m0 || m > m1) return false;
-        }
-      }
-      return true;
-    });
-  }, [filters, sourceCases]);
+  return useMemo(() => filterCases(filters, cases ?? []), [filters, cases]);
 };
