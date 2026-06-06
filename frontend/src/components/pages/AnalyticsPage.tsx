@@ -10,11 +10,11 @@ import { CalendarRange, Eye } from "lucide-react";
 import { DonutWithLegend } from "@/components/ui/donut-with-legend";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { getCompanyCaseResult, type CompanyCaseResult } from "@/lib/companyCaseResult";
+import { summarizeCompanyResults, type CompanyResultSummary } from "@/lib/companyCaseResult";
 
 type AnalyticsYear = "2026" | "2025" | "all";
 type AnalyticsPeriod = "full" | "q1" | "q2" | "q3" | "q4";
-type BranchSort = "total" | CompanyCaseResult;
+type BranchSort = keyof CompanyResultSummary;
 
 const yearLabels: Record<AnalyticsYear, string> = {
   "2026": "2026",
@@ -47,7 +47,7 @@ const AnalyticsPage = () => {
   // Год + Период (общий фильтр для всех графиков на странице).
   const [year, setYearState] = useState<AnalyticsYear>("2026");
   const [period, setPeriod] = useState<AnalyticsPeriod>("full");
-  const [branchSort, setBranchSort] = useState<BranchSort>("total");
+  const [branchSort, setBranchSort] = useState<BranchSort>("claimsTotal");
   const [showEmptyBranches, setShowEmptyBranches] = useState(false);
   const setYear = (y: AnalyticsYear) => {
     setYearState(y);
@@ -84,14 +84,11 @@ const AnalyticsPage = () => {
     return chartBranches
       .map((b) => {
         const cases = userCases.filter((c) => c.branch === b);
-        const results = cases.map(getCompanyCaseResult);
+        const summary = summarizeCompanyResults(cases);
         return {
           branchFull: b,
-          total: cases.length,
-          won: results.filter((result) => result === "won").length,
-          lost: results.filter((result) => result === "lost").length,
-          in_work: results.filter((result) => result === "in_work").length,
-          neutral: results.filter((result) => result === "neutral").length,
+          allCases: cases.length,
+          ...summary,
         };
       });
   }, [chartBranches, userCases]);
@@ -99,8 +96,12 @@ const AnalyticsPage = () => {
   const visibleBranchRows = useMemo(
     () =>
       branchCasesRows
-        .filter((row) => showEmptyBranches || row.total > 0)
-        .sort((a, b) => b[branchSort] - a[branchSort] || b.total - a.total || a.branchFull.localeCompare(b.branchFull, "ru")),
+        .filter((row) => showEmptyBranches || row.allCases > 0)
+        .sort((a, b) => {
+          const aValue = a[branchSort] ?? -1;
+          const bValue = b[branchSort] ?? -1;
+          return bValue - aValue || b.claimsTotal - a.claimsTotal || a.branchFull.localeCompare(b.branchFull, "ru");
+        }),
     [branchCasesRows, branchSort, showEmptyBranches],
   );
 
@@ -190,11 +191,13 @@ const AnalyticsPage = () => {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="total">По количеству дел</SelectItem>
+                  <SelectItem value="claimsTotal">По количеству исков (X)</SelectItem>
                   <SelectItem value="won">По выигранным</SelectItem>
                   <SelectItem value="lost">По проигранным</SelectItem>
-                  <SelectItem value="in_work">По делам в работе</SelectItem>
-                  <SelectItem value="neutral">По нейтральным</SelectItem>
+                  <SelectItem value="inWork">По делам в работе</SelectItem>
+                  <SelectItem value="noDecision">По делам без решения</SelectItem>
+                  <SelectItem value="thirdParty">По третьим лицам</SelectItem>
+                  <SelectItem value="winRate">По проценту побед</SelectItem>
                 </SelectContent>
               </Select>
               <label className="flex cursor-pointer items-center gap-2 text-xs text-slate-600">
@@ -210,37 +213,43 @@ const AnalyticsPage = () => {
             <p className="py-10 text-center text-sm text-muted-foreground">Нет дел с указанным филиалом</p>
           ) : (
             <div className="overflow-x-auto rounded-md border border-slate-200">
-              <table className="w-full min-w-[980px] text-sm">
+              <table className="w-full min-w-[1220px] text-sm">
                 <thead>
                   <tr className="border-b border-slate-200 bg-slate-50/80">
                     <th className="table-header px-4 py-3 text-left">Филиал</th>
-                    <th className="table-header w-20 px-3 py-3 text-center">Всего</th>
+                    <th className="table-header w-24 px-3 py-3 text-center" title="Истец + ответчик">Исков (X)</th>
                     <th className="table-header w-28 px-3 py-3 text-center">Выиграно</th>
                     <th className="table-header w-28 px-3 py-3 text-center">Проиграно</th>
                     <th className="table-header w-24 px-3 py-3 text-center">В работе</th>
-                    <th className="table-header w-24 px-3 py-3 text-center">Нейтрально</th>
-                    <th className="table-header w-[32%] min-w-[260px] px-4 py-3 text-left">Соотношение показателей</th>
+                    <th className="table-header w-28 px-3 py-3 text-center">Без решения</th>
+                    <th className="table-header w-24 px-3 py-3 text-center">3-е лицо</th>
+                    <th className="table-header w-24 px-3 py-3 text-center">% побед</th>
+                    <th className="table-header w-[28%] min-w-[260px] px-4 py-3 text-left">Структура X</th>
                   </tr>
                 </thead>
                 <tbody>
                   {visibleBranchRows.map((row) => {
-                    const wonWidth = row.total > 0 ? (row.won / row.total) * 100 : 0;
-                    const lostWidth = row.total > 0 ? (row.lost / row.total) * 100 : 0;
-                    const inWorkWidth = row.total > 0 ? (row.in_work / row.total) * 100 : 0;
-                    const neutralWidth = row.total > 0 ? (row.neutral / row.total) * 100 : 0;
+                    const wonWidth = row.claimsTotal > 0 ? (row.won / row.claimsTotal) * 100 : 0;
+                    const lostWidth = row.claimsTotal > 0 ? (row.lost / row.claimsTotal) * 100 : 0;
+                    const inWorkWidth = row.claimsTotal > 0 ? (row.inWork / row.claimsTotal) * 100 : 0;
+                    const noDecisionWidth = row.claimsTotal > 0 ? (row.noDecision / row.claimsTotal) * 100 : 0;
 
                     return (
                       <tr key={row.branchFull} className="border-b border-slate-100 last:border-0 hover:bg-blue-50/35">
                         <td className="px-4 py-3 font-medium text-slate-900">{row.branchFull}</td>
-                        <td className="px-3 py-3 text-center font-semibold tabular-nums text-slate-900">{row.total}</td>
+                        <td className="px-3 py-3 text-center font-semibold tabular-nums text-slate-900">{row.claimsTotal}</td>
                         <td className="px-3 py-3 text-center font-medium tabular-nums text-emerald-700">{row.won}</td>
                         <td className="px-3 py-3 text-center font-medium tabular-nums text-red-700">{row.lost}</td>
-                        <td className="px-3 py-3 text-center font-medium tabular-nums text-amber-700">{row.in_work}</td>
-                        <td className="px-3 py-3 text-center font-medium tabular-nums text-slate-600">{row.neutral}</td>
+                        <td className="px-3 py-3 text-center font-medium tabular-nums text-amber-700">{row.inWork}</td>
+                        <td className="px-3 py-3 text-center font-medium tabular-nums text-slate-600">{row.noDecision}</td>
+                        <td className="px-3 py-3 text-center font-medium tabular-nums text-blue-700">{row.thirdParty}</td>
+                        <td className="px-3 py-3 text-center font-semibold tabular-nums text-blue-900">
+                          {row.winRate === null ? "—" : `${row.winRate}%`}
+                        </td>
                         <td className="px-4 py-3">
                           <div
                             className="flex h-3 w-full overflow-hidden rounded-sm bg-slate-100 ring-1 ring-inset ring-slate-200"
-                            title={`Выиграно: ${row.won}; проиграно: ${row.lost}; в работе: ${row.in_work}; нейтрально: ${row.neutral}`}
+                            title={`X: ${row.claimsTotal}; выиграно: ${row.won}; проиграно: ${row.lost}; в работе: ${row.inWork}; без решения: ${row.noDecision}`}
                           >
                             {row.won > 0 && (
                               <span className="h-full bg-[hsl(142,71%,45%)]" style={{ width: `${wonWidth}%` }} />
@@ -248,11 +257,11 @@ const AnalyticsPage = () => {
                             {row.lost > 0 && (
                               <span className="h-full bg-[hsl(0,72%,51%)]" style={{ width: `${lostWidth}%` }} />
                             )}
-                            {row.in_work > 0 && (
+                            {row.inWork > 0 && (
                               <span className="h-full bg-[hsl(38,92%,50%)]" style={{ width: `${inWorkWidth}%` }} />
                             )}
-                            {row.neutral > 0 && (
-                              <span className="h-full bg-slate-400" style={{ width: `${neutralWidth}%` }} />
+                            {row.noDecision > 0 && (
+                              <span className="h-full bg-slate-400" style={{ width: `${noDecisionWidth}%` }} />
                             )}
                           </div>
                         </td>
@@ -278,8 +287,12 @@ const AnalyticsPage = () => {
             </span>
             <span className="inline-flex items-center gap-1.5">
               <span className="h-2 w-2 shrink-0 rounded-full bg-slate-400" />
-              Нейтрально (третьи лица и прочие исходы)
+              Без решения по существу
             </span>
+            <span className="inline-flex items-center gap-1.5 text-blue-700">
+              3-е лицо показывается отдельно и не входит в X
+            </span>
+            <span className="text-slate-500">% побед = выиграно / (выиграно + проиграно)</span>
           </div>
         </motion.div>
       </div>
