@@ -49,6 +49,7 @@ const AnalyticsPage = () => {
   const [period, setPeriod] = useState<AnalyticsPeriod>("full");
   const [branchSort, setBranchSort] = useState<BranchSort>("claimsTotal");
   const [showEmptyBranches, setShowEmptyBranches] = useState(false);
+  const [showThirdPartyCases, setShowThirdPartyCases] = useState(false);
   const setYear = (y: AnalyticsYear) => {
     setYearState(y);
     if (y === "all") setPeriod("full");
@@ -196,7 +197,7 @@ const AnalyticsPage = () => {
                   <SelectItem value="lost">По проигранным</SelectItem>
                   <SelectItem value="inWork">По делам в работе</SelectItem>
                   <SelectItem value="noDecision">По делам без решения</SelectItem>
-                  <SelectItem value="thirdParty">По третьим лицам</SelectItem>
+                  {showThirdPartyCases && <SelectItem value="thirdParty">По делам третьих лиц</SelectItem>}
                   <SelectItem value="winRate">По проценту побед</SelectItem>
                 </SelectContent>
               </Select>
@@ -207,13 +208,24 @@ const AnalyticsPage = () => {
                 />
                 Показывать без дел
               </label>
+              <label className="flex cursor-pointer items-center gap-2 text-xs text-slate-600">
+                <Checkbox
+                  checked={showThirdPartyCases}
+                  onCheckedChange={(checked) => {
+                    const shouldShow = checked === true;
+                    setShowThirdPartyCases(shouldShow);
+                    if (!shouldShow && branchSort === "thirdParty") setBranchSort("claimsTotal");
+                  }}
+                />
+                Показывать дела с участием третьего лица
+              </label>
             </div>
           </div>
           {visibleBranchRows.length === 0 ? (
             <p className="py-10 text-center text-sm text-muted-foreground">Нет дел с указанным филиалом</p>
           ) : (
             <div className="overflow-x-auto rounded-md border border-slate-200">
-              <table className="w-full min-w-[1220px] text-sm">
+              <table className={`w-full text-sm ${showThirdPartyCases ? "min-w-[1220px]" : "min-w-[1120px]"}`}>
                 <thead>
                   <tr className="border-b border-slate-200 bg-slate-50/80">
                     <th className="table-header px-4 py-3 text-left">Филиал</th>
@@ -222,7 +234,9 @@ const AnalyticsPage = () => {
                     <th className="table-header w-28 px-3 py-3 text-center">Проиграно</th>
                     <th className="table-header w-24 px-3 py-3 text-center">В работе</th>
                     <th className="table-header w-28 px-3 py-3 text-center">Без решения</th>
-                    <th className="table-header w-24 px-3 py-3 text-center">3-е лицо</th>
+                    {showThirdPartyCases && (
+                      <th className="table-header w-24 px-3 py-3 text-center">Третье лицо</th>
+                    )}
                     <th className="table-header w-24 px-3 py-3 text-center">% побед</th>
                     <th className="table-header w-[28%] min-w-[260px] px-4 py-3 text-left">Структура X</th>
                   </tr>
@@ -242,7 +256,9 @@ const AnalyticsPage = () => {
                         <td className="px-3 py-3 text-center font-medium tabular-nums text-red-700">{row.lost}</td>
                         <td className="px-3 py-3 text-center font-medium tabular-nums text-amber-700">{row.inWork}</td>
                         <td className="px-3 py-3 text-center font-medium tabular-nums text-slate-600">{row.noDecision}</td>
-                        <td className="px-3 py-3 text-center font-medium tabular-nums text-blue-700">{row.thirdParty}</td>
+                        {showThirdPartyCases && (
+                          <td className="px-3 py-3 text-center font-medium tabular-nums text-blue-700">{row.thirdParty}</td>
+                        )}
                         <td className="px-3 py-3 text-center font-semibold tabular-nums text-blue-900">
                           {row.winRate === null ? "—" : `${row.winRate}%`}
                         </td>
@@ -289,9 +305,11 @@ const AnalyticsPage = () => {
               <span className="h-2 w-2 shrink-0 rounded-full bg-slate-400" />
               Без решения по существу
             </span>
-            <span className="inline-flex items-center gap-1.5 text-blue-700">
-              3-е лицо показывается отдельно и не входит в X
-            </span>
+            {showThirdPartyCases && (
+              <span className="inline-flex items-center gap-1.5 text-blue-700">
+                Дела с участием третьего лица показываются отдельно и не входят в X
+              </span>
+            )}
             <span className="text-slate-500">% побед = выиграно / (выиграно + проиграно)</span>
           </div>
         </motion.div>
