@@ -225,20 +225,20 @@ const AnalyticsPage = () => {
             <p className="py-10 text-center text-sm text-muted-foreground">Нет дел с указанным филиалом</p>
           ) : (
             <div className="overflow-x-auto rounded-md border border-slate-200">
-              <table className={`w-full text-sm ${showThirdPartyCases ? "min-w-[1220px]" : "min-w-[1120px]"}`}>
+              <table className={`w-full text-[13px] ${showThirdPartyCases ? "min-w-[1160px]" : "min-w-[960px]"}`}>
                 <thead>
                   <tr className="border-b border-slate-200 bg-slate-50/80">
-                    <th className="table-header px-4 py-3 text-left">Филиал</th>
-                    <th className="table-header w-24 px-3 py-3 text-center" title="Истец + ответчик">Исков (X)</th>
-                    <th className="table-header w-28 px-3 py-3 text-center">Выиграно</th>
-                    <th className="table-header w-28 px-3 py-3 text-center">Проиграно</th>
-                    <th className="table-header w-24 px-3 py-3 text-center">В работе</th>
-                    <th className="table-header w-28 px-3 py-3 text-center">Без решения</th>
+                    <th className="table-header w-[220px] px-3 py-2.5 text-left">Филиал</th>
+                    <th className="table-header w-20 px-2 py-2.5 text-center" title="Истец + ответчик">Исков (X)</th>
+                    <th className="table-header w-[88px] px-2 py-2.5 text-center">Выиграно</th>
+                    <th className="table-header w-[88px] px-2 py-2.5 text-center">Проиграно</th>
+                    <th className="table-header w-20 px-2 py-2.5 text-center">В работе</th>
+                    <th className="table-header w-24 px-2 py-2.5 text-center">Без решения</th>
                     {showThirdPartyCases && (
-                      <th className="table-header w-24 px-3 py-3 text-center">Третье лицо</th>
+                      <th className="table-header w-24 px-2 py-2.5 text-center">Третье лицо</th>
                     )}
-                    <th className="table-header w-24 px-3 py-3 text-center">% побед</th>
-                    <th className="table-header w-[28%] min-w-[260px] px-4 py-3 text-left">Структура X</th>
+                    <th className="table-header w-20 px-2 py-2.5 text-center">% побед</th>
+                    <th className="table-header w-[24%] min-w-[210px] px-3 py-2.5 text-left">Структура X</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -250,19 +250,19 @@ const AnalyticsPage = () => {
 
                     return (
                       <tr key={row.branchFull} className="border-b border-slate-100 last:border-0 hover:bg-blue-50/35">
-                        <td className="px-4 py-3 font-medium text-slate-900">{row.branchFull}</td>
-                        <td className="px-3 py-3 text-center font-semibold tabular-nums text-slate-900">{row.claimsTotal}</td>
-                        <td className="px-3 py-3 text-center font-medium tabular-nums text-emerald-700">{row.won}</td>
-                        <td className="px-3 py-3 text-center font-medium tabular-nums text-red-700">{row.lost}</td>
-                        <td className="px-3 py-3 text-center font-medium tabular-nums text-amber-700">{row.inWork}</td>
-                        <td className="px-3 py-3 text-center font-medium tabular-nums text-slate-600">{row.noDecision}</td>
+                        <td className="px-3 py-2.5 font-medium text-slate-900">{row.branchFull}</td>
+                        <td className="px-2 py-2.5 text-center font-semibold tabular-nums text-slate-900">{row.claimsTotal}</td>
+                        <td className="px-2 py-2.5 text-center font-medium tabular-nums text-emerald-700">{row.won}</td>
+                        <td className="px-2 py-2.5 text-center font-medium tabular-nums text-red-700">{row.lost}</td>
+                        <td className="px-2 py-2.5 text-center font-medium tabular-nums text-amber-700">{row.inWork}</td>
+                        <td className="px-2 py-2.5 text-center font-medium tabular-nums text-slate-600">{row.noDecision}</td>
                         {showThirdPartyCases && (
-                          <td className="px-3 py-3 text-center font-medium tabular-nums text-blue-700">{row.thirdParty}</td>
+                          <td className="px-2 py-2.5 text-center font-medium tabular-nums text-blue-700">{row.thirdParty}</td>
                         )}
-                        <td className="px-3 py-3 text-center font-semibold tabular-nums text-blue-900">
+                        <td className="px-2 py-2.5 text-center font-semibold tabular-nums text-blue-900">
                           {row.winRate === null ? "—" : `${row.winRate}%`}
                         </td>
-                        <td className="px-4 py-3">
+                        <td className="px-3 py-2.5">
                           <div
                             className="flex h-3 w-full overflow-hidden rounded-sm bg-slate-100 ring-1 ring-inset ring-slate-200"
                             title={`X: ${row.claimsTotal}; выиграно: ${row.won}; проиграно: ${row.lost}; в работе: ${row.inWork}; без решения: ${row.noDecision}`}
