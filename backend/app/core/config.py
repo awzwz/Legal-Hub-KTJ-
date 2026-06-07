@@ -30,10 +30,12 @@ class Settings(BaseSettings):
     aws_access_key_id: Optional[str] = None
     aws_secret_access_key: Optional[str] = None
     aws_region: str = "us-east-1"
+    case_document_storage_dir: str = "/app/storage/case-documents"
 
     relax_auth: bool = False
     cors_origins: str = "http://localhost:8080,http://127.0.0.1:8080"
     auto_ddl: bool = False
+    demo_seed_enabled: bool = False
 
     cookie_secure: bool = False
     cookie_samesite: Literal["lax", "strict", "none"] = "lax"
@@ -45,14 +47,28 @@ class Settings(BaseSettings):
     @model_validator(mode="after")
     def _production_guards(self) -> "Settings":
         if self.env == "production":
-            if self.jwt_secret.startswith("change-me"):
-                raise RuntimeError("JWT_SECRET must be overridden in production")
-            if self.internal_api_key.startswith("dev-internal-key"):
-                raise RuntimeError("INTERNAL_API_KEY must be overridden in production")
+            jwt = self.jwt_secret.strip().lower()
+            internal_key = self.internal_api_key.strip().lower()
+            if len(self.jwt_secret) < 64 or "change-me" in jwt or "__change_me" in jwt:
+                raise RuntimeError("JWT_SECRET must be a generated secret of at least 64 characters in production")
+            if len(self.internal_api_key) < 32 or "change-me" in internal_key or "__change_me" in internal_key:
+                raise RuntimeError("INTERNAL_API_KEY must be a generated secret of at least 32 characters in production")
             if self.relax_auth:
                 raise RuntimeError("RELAX_AUTH must be disabled in production")
             if self.auto_ddl:
                 raise RuntimeError("AUTO_DDL must be disabled in production; use alembic")
+            if self.demo_seed_enabled:
+                raise RuntimeError("DEMO_SEED_ENABLED must be disabled in production")
+            if not self.cookie_secure:
+                raise RuntimeError("COOKIE_SECURE must be enabled in production")
+            origins = [origin.strip().lower() for origin in self.cors_origins.split(",") if origin.strip()]
+            if not origins or any(
+                not origin.startswith("https://") or origin == "*" or "__" in origin for origin in origins
+            ):
+                raise RuntimeError("CORS_ORIGINS must contain only explicit https:// origins in production")
+            database_url = self.database_url.strip().lower()
+            if "__change_me" in database_url or "://legalhub:legalhub@" in database_url:
+                raise RuntimeError("DATABASE_URL must use production credentials")
         return self
 
 

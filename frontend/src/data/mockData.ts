@@ -1,3 +1,5 @@
+import { getCompanyCaseResult, summarizeCompanyResults } from "@/lib/companyCaseResult";
+
 export type CaseStatus = "active" | "mediation" | "suspended" | "execution" | "closed";
 export type CaseOutcome = "fully_satisfied" | "partially_satisfied" | "denied" | "settled" | "dismissed" | "pending" | "returned";
 export type CourtInstance = "first" | "appeal" | "cassation" | "supreme";
@@ -31,6 +33,10 @@ export interface CaseDocument {
   title: string;
   uploadDate: string;
   author: string;
+  fileName?: string | null;
+  mimeType?: string | null;
+  sizeBytes?: number;
+  downloadUrl?: string | null;
 }
 
 export interface CaseComment {
@@ -131,6 +137,7 @@ export interface LegalCase {
   /** Раздел в шаблоне ПИР, в который дело попадёт при экспорте. По умолчанию — закупки. */
   disputeCategory?: DisputeCategory;
   assignedLawyer: string;
+  assignedLawyerIsActive?: boolean;
   /** UUID филиала (из API) */
   branchId?: string;
   /** UUID назначенного юриста (из API) */
@@ -366,6 +373,7 @@ export const getLawyerNamesFromCases = (cases: LegalCase[]): string[] => {
   return Array.from(set).sort((a, b) => a.localeCompare(b, "ru"));
 };
 export interface Counterparty {
+  id: string;
   bin: string;
   name: string;
   totalCases: number;
@@ -378,17 +386,27 @@ export interface Counterparty {
 export const getCounterparties = (cases: LegalCase[]): Counterparty[] => {
   const map = new Map<string, Counterparty>();
   cases.forEach(c => {
-    const existing = map.get(c.companyBIN);
+    // У КТЖ-стороны компания/БИН в поле company/companyBIN — это и есть контрагент.
+    // БИН чаще всего пустой (импорт ПИР не содержит его для большинства дел),
+    // поэтому ключ группировки — нормализованное имя; БИН только переносим в карточку,
+    // если он есть. Это даёт 187 уникальных контрагентов вместо 3.
+    const rawName = (c.company || "").trim();
+    if (!rawName) return;
+    const key = rawName.toLowerCase().replace(/\s+/g, " ");
+    const existing = map.get(key);
     if (existing) {
       existing.totalCases++;
       existing.activeCases += ["active", "mediation", "suspended", "execution"].includes(c.status) ? 1 : 0;
       existing.totalDebt += c.mainDebt;
       existing.totalPaid += c.paidAmount;
       if (c.filingDate > existing.lastCaseDate) existing.lastCaseDate = c.filingDate;
+      // если у нас ещё не было БИН — подхватываем первый встретившийся
+      if (!existing.bin && c.companyBIN) existing.bin = c.companyBIN;
     } else {
-      map.set(c.companyBIN, {
-        bin: c.companyBIN,
-        name: c.company,
+      map.set(key, {
+        id: key,
+        bin: c.companyBIN || "",
+        name: rawName,
         totalCases: 1,
         activeCases: ["active", "mediation", "suspended", "execution"].includes(c.status) ? 1 : 0,
         totalDebt: c.mainDebt,
@@ -430,47 +448,76 @@ const isActiveNow = (c: LegalCase): boolean => {
 };
 
 const workloadLevelFor = (n: number): "free" | "normal" | "busy" | "overloaded" => {
-  if (n <= 3) return "free";
-  if (n <= 7) return "normal";
-  if (n <= 12) return "busy";
+  if (n === 0) return "free";
+  if (n <= 3) return "normal";
+  if (n <= 5) return "busy";
   return "overloaded";
 };
+
+const hiddenLawyerStatsNames = new Set(["Орак С.Б."]);
+
+const clampScore = (value: number) => Math.max(0, Math.min(100, value));
 
 export const getLawyerStats = (cases: LegalCase[], lawyerNames?: string[]) => {
   const names =
     lawyerNames && lawyerNames.length > 0
-      ? [...new Set(lawyerNames.map((n) => n.trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, "ru"))
+      ? [...new Set(lawyerNames.map((n) => n.trim()).filter(Boolean))]
       : getLawyerNamesFromCases(cases);
-  const rows = names.map((lawyer) => {
+  const visibleNames = names
+    .filter((name) => !hiddenLawyerStatsNames.has(name))
+    .sort((a, b) => a.localeCompare(b, "ru"));
+  const rows = visibleNames.map((lawyer) => {
     const lawyerCases = cases.filter((c) => c.assignedLawyer === lawyer);
-    const won = lawyerCases.filter(
-      (c) => c.outcome === "fully_satisfied" || c.outcome === "partially_satisfied" || c.outcome === "settled",
-    ).length;
-    const lost = lawyerCases.filter((c) => c.outcome === "denied" || c.outcome === "dismissed").length;
-    const active = lawyerCases.filter((c) => ["active", "mediation", "suspended", "execution"].includes(c.status)).length;
+    const ratingCases = lawyerCases.filter((c) => c.partyRole !== "third_party");
+    const companyResults = summarizeCompanyResults(lawyerCases);
+    const decidedCases = ratingCases.filter((c) => {
+      const result = getCompanyCaseResult(c);
+      return result === "won" || result === "lost";
+    });
+    const isLawyerActive =
+      lawyerCases.length === 0 ? true : lawyerCases.some((c) => c.assignedLawyerIsActive !== false);
     const activeNow = lawyerCases.filter(isActiveNow).length;
-    const totalAmount = lawyerCases.reduce((s, c) => s + c.claimAmount, 0);
+    const totalAmount = ratingCases.reduce((s, c) => s + c.claimAmount, 0);
+    const highRiskCases = ratingCases.filter((c) => c.riskLevel === "high").length;
+    const overdueCases = ratingCases.filter((c) => (c.daysOverdue ?? 0) > 0).length;
+    const overdueDays = ratingCases.reduce((s, c) => s + Math.max(0, c.daysOverdue ?? 0), 0);
     const avgDays =
-      lawyerCases.length > 0
+      decidedCases.length > 0
         ? Math.round(
-            lawyerCases.reduce((s, c) => {
+            decidedCases.reduce((s, c) => {
               const start = new Date(c.filingDate);
               const end = new Date(c.lastUpdated);
               return s + (end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24);
-            }, 0) / lawyerCases.length,
+            }, 0) / decidedCases.length,
           )
         : 0;
-    const winRate = lawyerCases.length > 0 ? Math.round((won / Math.max(won + lost, 1)) * 100) : 0;
+    const winRate = companyResults.winRate ?? 0;
+    const resolvedQuality = companyResults.winRate ?? 50;
+    const confidence = decidedCases.length / (decidedCases.length + 3);
+    const resultScore = clampScore(50 + (resolvedQuality - 50) * confidence);
     return {
       name: lawyer,
-      totalCases: lawyerCases.length,
-      won,
-      lost,
-      active,
+      isActive: isLawyerActive,
+      totalCases: companyResults.claimsTotal,
+      won: companyResults.won,
+      lost: companyResults.lost,
+      active: companyResults.inWork,
+      noDecision: companyResults.noDecision,
+      thirdParty: companyResults.thirdParty,
       activeNow,
+      decidedCases: decidedCases.length,
+      highRiskCases,
+      overdueCases,
+      overdueDays,
       totalAmount,
       avgDays,
       winRate,
+      resultScore: Math.round(resultScore),
+      volumeScore: 0,
+      amountScore: 0,
+      riskScore: 0,
+      timelinessScore: 0,
+      ratingScore: 0,
       workloadLevel: workloadLevelFor(activeNow),
       workloadPercent: 0,
       compositeScore: 0,
@@ -479,18 +526,38 @@ export const getLawyerStats = (cases: LegalCase[], lawyerNames?: string[]) => {
 
   const maxActive = Math.max(1, ...rows.map((r) => r.activeNow));
   const maxTotal = Math.max(1, ...rows.map((r) => r.totalCases));
-  const maxAmount = Math.max(1, ...rows.map((r) => r.totalAmount));
+  const maxAmountLog = Math.max(1, ...rows.map((r) => Math.log1p(r.totalAmount)));
+  const maxRisk = Math.max(1, ...rows.map((r) => r.highRiskCases));
   const minAvgDays = Math.min(...rows.filter((r) => r.avgDays > 0).map((r) => r.avgDays), Infinity);
+  const maxAvgDays = Math.max(1, ...rows.map((r) => r.avgDays));
 
   for (const r of rows) {
     r.workloadPercent = Math.round((r.activeNow / maxActive) * 100);
-    const volumeScore = (r.totalCases / maxTotal) * 100;
-    const amountScore = (r.totalAmount / maxAmount) * 100;
-    const speedScore = r.avgDays > 0 && Number.isFinite(minAvgDays) ? Math.min(100, (minAvgDays / r.avgDays) * 100) : 0;
-    r.compositeScore = Math.round(r.winRate * 0.4 + volumeScore * 0.25 + amountScore * 0.2 + speedScore * 0.15);
+    r.volumeScore = Math.round((Math.log1p(r.totalCases) / Math.log1p(maxTotal)) * 100);
+    r.amountScore = Math.round((Math.log1p(r.totalAmount) / maxAmountLog) * 100);
+    r.riskScore = Math.round((Math.log1p(r.highRiskCases) / Math.log1p(maxRisk)) * 100);
+
+    const durationScore =
+      r.avgDays > 0 && Number.isFinite(minAvgDays) && maxAvgDays > minAvgDays
+        ? clampScore(100 - ((r.avgDays - minAvgDays) / (maxAvgDays - minAvgDays)) * 60)
+        : r.avgDays > 0
+          ? 85
+          : 60;
+    const overduePenalty = Math.min(55, r.overdueCases * 12 + Math.min(25, r.overdueDays / 3));
+    r.timelinessScore = Math.round(clampScore(durationScore - overduePenalty));
+    r.ratingScore = r.totalCases === 0
+      ? 0
+      : Math.round(
+          r.resultScore * 0.45 +
+          r.volumeScore * 0.2 +
+          r.amountScore * 0.15 +
+          r.riskScore * 0.1 +
+          r.timelinessScore * 0.1,
+        );
+    r.compositeScore = r.ratingScore;
   }
 
-  return rows.sort((a, b) => b.winRate - a.winRate);
+  return rows.sort((a, b) => b.ratingScore - a.ratingScore || b.totalCases - a.totalCases);
 };
 
 // Role system
@@ -519,7 +586,8 @@ export const USER_STORAGE_KEY = "court_flow_current_user";
 // Permissions helper
 export const canViewAllCases = (user: User): boolean =>
   user.role === "director" || user.role === "chief_lawyer" || user.role === "accountant" || (user.branch || "").includes("Центральный аппарат");
-export const canViewAllBranches = (user: User): boolean => user.role === "director" || user.role === "chief_lawyer";
+export const canViewAllBranches = (user: User): boolean =>
+  user.role === "director" || user.role === "chief_lawyer" || (user.branch || "").includes("Центральный аппарат");
 export const canViewAllAnalytics = (user: User): boolean => user.role === "director" || user.role === "chief_lawyer";
 export const canViewAuditLog = (user: User): boolean => user.role === "director" || user.role === "chief_lawyer";
 export const canEditCase = (user: User, caseData: LegalCase): boolean => {
@@ -554,4 +622,3 @@ export const getFilteredCasesForUser = (user: User, cases: LegalCase[]): LegalCa
   }
   return [];
 };
-

@@ -190,7 +190,7 @@ const AppHeader = ({ onCaseClick, onSectionChange }: AppHeaderProps) => {
                 handlePickCase(searchResults[0].id);
               }
             }}
-            placeholder="Поиск по делам, БИН, компаниям..."
+            placeholder="Поиск по номеру дела, наименованию, БИН"
             className="w-full pl-9 pr-9 py-2 text-sm rounded-lg bg-[hsl(220,14%,96%)] border border-[hsl(215,35%,85%)] outline-none focus:ring-2 focus:ring-[hsl(192,72%,47%)] focus:border-[hsl(192,72%,47%)] placeholder:text-[hsl(215,20%,55%)]"
           />
           {query && (

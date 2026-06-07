@@ -116,17 +116,17 @@ def build_candidates_for_case(
                 }
             )
 
-    # 4) Высокая значимость — напоминание сосредоточиться на деле.
-    from app.domain.case_mapper import compute_significance
+    # 4) Высокий риск — напоминание сосредоточиться на деле.
+    from app.domain.case_mapper import effective_significance
 
-    if compute_significance(case) == "high":
+    if effective_significance(case) == "high":
         cands.append(
             {
                 "type": "status",
                 "priority": "high",
-                "title": f"Высокая значимость дела {case_label}",
+                "title": f"Высокий риск по делу {case_label}",
                 "body": (
-                    f"Дело имеет высокую значимость (сумма / срочность / роль). "
+                    f"Дело имеет высокий риск (репутационные риски / крупные суммы). "
                     f"Контрагент: {case.opponent_type or 'не указан'}, истец/ответчик — "
                     f"{case.plaintiff} / {case.defendant}."
                 ),

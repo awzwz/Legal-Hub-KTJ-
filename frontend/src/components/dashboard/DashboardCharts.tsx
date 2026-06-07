@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend, LineChart, Line, CartesianGrid } from "recharts";
 import { caseStatusLabels, disputeCategoryLabels, formatAmountShort, getLawyerStats, canViewLawyerStats, canViewAllBranches, isRealBranchNameForStats, normalizeBranchName, type LegalCase } from "@/data/mockData";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
@@ -91,6 +91,7 @@ const DashboardCharts = ({ cases, year }: { cases?: LegalCase[]; year?: number }
   const monthlyTrend = useMemo(() => buildMonthlyTrend(userCases, year), [userCases, year]);
   const canViewAll = canViewAllBranches(user);
   const showLawyerStats = canViewLawyerStats(user);
+  const showMonthlyTrend = year === 2026;
 
   const DISPUTE_COLORS: Record<string, string> = {
     procurement: "hsl(210, 78%, 52%)",
@@ -113,17 +114,19 @@ const DashboardCharts = ({ cases, year }: { cases?: LegalCase[]; year?: number }
     third_party: "3-лицо",
   };
 
-  // Дела, где КТЖ выступает 3-м лицом, считаются отдельной долькой
-  // (как в эталоне Малики — у них нет содержательной dispute_category).
+  // Дела, где КТЖ выступает 3-м лицом, в этой диаграмме не учитываем —
+  // по требованию заказчика.
   const disputeData = Object.entries(
-    userCases.reduce((acc, c) => {
-      const key = c.partyRole === "third_party" ? "third_party" : (c.disputeCategory ?? "other");
-      acc[key] = (acc[key] || 0) + 1;
-      return acc;
-    }, {} as Record<string, number>)
+    userCases
+      .filter(c => c.partyRole !== "third_party")
+      .reduce((acc, c) => {
+        const key = c.disputeCategory ?? "other";
+        acc[key] = (acc[key] || 0) + 1;
+        return acc;
+      }, {} as Record<string, number>)
   ).map(([cat, count]) => ({
     key: cat,
-    name: cat === "third_party" ? "3-лицо" : (disputeCategoryLabels[cat as keyof typeof disputeCategoryLabels] || cat),
+    name: disputeCategoryLabels[cat as keyof typeof disputeCategoryLabels] || cat,
     shortName: DISPUTE_SHORT[cat] || cat,
     value: count,
     color: DISPUTE_COLORS[cat] || "#ccc",
@@ -235,30 +238,30 @@ const DashboardCharts = ({ cases, year }: { cases?: LegalCase[]; year?: number }
 
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }} className="stat-card">
-          <h3 className="text-sm font-semibold mb-4">
-            {year != null ? `Динамика дел по месяцам (${year})` : "Динамика дел (6 мес.)"}
-          </h3>
-          <div className="h-[240px]">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={monthlyTrend}>
-                <CartesianGrid strokeDasharray="3 3" stroke="hsl(30, 10%, 90%)" />
-                <XAxis dataKey="month" tick={{ fontSize: 11 }} />
-                <YAxis tick={{ fontSize: 11 }} />
-                <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8 }} />
-                <Line type="monotone" dataKey="won" stroke="hsl(142, 71%, 45%)" strokeWidth={2} name="Удовлетворено" dot={{ r: 3 }} />
-                <Line type="monotone" dataKey="lost" stroke="hsl(0, 72%, 51%)" strokeWidth={2} name="Отказано" dot={{ r: 3 }} />
-                {year !== 2025 && (
+      <div className={cn("grid gap-4", showMonthlyTrend && showLawyerStats ? "grid-cols-1 lg:grid-cols-2" : "grid-cols-1")}>
+        {showMonthlyTrend && (
+          <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }} className="stat-card">
+            <h3 className="text-sm font-semibold mb-4">
+              Динамика дел по месяцам подачи иска (2026)
+            </h3>
+            <div className="h-[240px]">
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={monthlyTrend}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(30, 10%, 90%)" />
+                  <XAxis dataKey="month" tick={{ fontSize: 11 }} />
+                  <YAxis tick={{ fontSize: 11 }} />
+                  <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8 }} />
+                  <Line type="monotone" dataKey="won" stroke="hsl(142, 71%, 45%)" strokeWidth={2} name="Удовлетворено" dot={{ r: 3 }} />
+                  <Line type="monotone" dataKey="lost" stroke="hsl(0, 72%, 51%)" strokeWidth={2} name="Отказано" dot={{ r: 3 }} />
                   <Line type="monotone" dataKey="active" stroke="hsl(38, 92%, 50%)" strokeWidth={2} name="В работе" dot={{ r: 3 }} />
-                )}
-                <Legend iconType="line" iconSize={12} wrapperStyle={{ fontSize: 12 }} />
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
-        </motion.div>
+                  <Legend iconType="line" iconSize={12} wrapperStyle={{ fontSize: 12 }} />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          </motion.div>
+        )}
 
-        {showLawyerStats && <LawyerWorkloadCard cases={userCases} year={year} />}
+        {showLawyerStats && <LawyerWorkloadCard />}
       </div>
 
       <div className={cn("grid gap-4", showLawyerStats && branchRanking.length > 0 ? "grid-cols-1 lg:grid-cols-2" : "grid-cols-1")}>
@@ -316,7 +319,7 @@ const DashboardCharts = ({ cases, year }: { cases?: LegalCase[]; year?: number }
       </div>
 
       <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }} className="stat-card">
-        <h3 className="text-sm font-semibold mb-4">Дела по размеру цены иска</h3>
+        <h3 className="text-sm font-semibold mb-4">Показатели по суммам исков</h3>
         <div className="grid grid-cols-3 sm:grid-cols-6 gap-3">
           {amountRanges.map((r, i) => (
             <div key={r.label} className="flex flex-col items-center bg-blue-50/60 rounded-lg p-3 border border-blue-100">
@@ -406,125 +409,55 @@ function BranchKpiRanking({ year }: { year?: number }) {
   );
 }
 
-/** Аналитика по загруженности юристов — для директора при назначении дел. */
-function LawyerWorkloadCard({ cases, year }: { cases: LegalCase[]; year?: number }) {
-  const [viewMode, setViewMode] = useState<"current" | "period">("current");
-  // «current» — только активные сейчас (вне зависимости от выбранного года, т.к. это
-  // снимок «прямо сейчас»). «period» — статистика по выбранному году.
+/** Текущая загрузка юристов — только количество дел в работе. */
+function LawyerWorkloadCard() {
   const allCases = useCases();
-  const sourceCases = viewMode === "current" ? allCases : cases;
-  const stats = useMemo(() => getLawyerStats(sourceCases), [sourceCases]);
-  // Сортируем по релевантной метрике: для «current» — по activeNow desc;
-  // для «period» — по totalCases desc.
-  const sorted = useMemo(() => {
-    return [...stats].sort((a, b) => {
-      if (viewMode === "current") return b.activeNow - a.activeNow;
-      return b.totalCases - a.totalCases;
-    });
-  }, [stats, viewMode]);
-
-  const workloadStyles: Record<string, { bar: string; text: string; bg: string; label: string }> = {
-    free:       { bar: "bg-emerald-500", text: "text-emerald-700", bg: "bg-emerald-50",  label: "Свободен" },
-    normal:     { bar: "bg-blue-500",    text: "text-blue-700",    bg: "bg-blue-50",     label: "Норма" },
-    busy:       { bar: "bg-amber-500",   text: "text-amber-700",   bg: "bg-amber-50",    label: "Высокая" },
-    overloaded: { bar: "bg-red-500",     text: "text-red-700",     bg: "bg-red-50",      label: "Перегружен" },
-  };
+  const rows = useMemo(
+    () =>
+      getLawyerStats(allCases)
+        .filter((lawyer) => lawyer.activeNow > 0)
+        .sort((a, b) => b.activeNow - a.activeNow || a.name.localeCompare(b.name, "ru")),
+    [allCases],
+  );
+  const totalActive = useMemo(
+    () => rows.reduce((sum, lawyer) => sum + lawyer.activeNow, 0),
+    [rows],
+  );
 
   return (
     <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.25 }} className="stat-card">
-      <div className="flex items-center justify-between gap-2 mb-3 flex-wrap">
-        <h3 className="text-sm font-semibold">Аналитика по загруженности юристов</h3>
-        <div className="flex items-center gap-1 text-[11px] bg-muted/50 rounded-md p-0.5">
-          <button
-            onClick={() => setViewMode("current")}
-            className={cn(
-              "px-2.5 py-1 rounded transition-colors",
-              viewMode === "current" ? "bg-white text-blue-700 font-semibold shadow-sm" : "text-muted-foreground hover:text-foreground",
-            )}
-            title="Активные дела прямо сейчас (независимо от года)"
-          >
-            Текущий момент
-          </button>
-          <button
-            onClick={() => setViewMode("period")}
-            className={cn(
-              "px-2.5 py-1 rounded transition-colors",
-              viewMode === "period" ? "bg-white text-blue-700 font-semibold shadow-sm" : "text-muted-foreground hover:text-foreground",
-            )}
-            title="Статистика за выбранный год"
-          >
-            За {year ?? "период"}
-          </button>
-        </div>
+      <div className="flex items-center justify-between gap-2 mb-3">
+        <h3 className="text-sm font-semibold">Дела в работе по юристам</h3>
+        <span className="rounded-md bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-800 tabular-nums">
+          {totalActive} всего
+        </span>
       </div>
       <p className="text-[11px] text-muted-foreground mb-3">
-        {viewMode === "current"
-          ? "Сколько дел у каждого юриста в активной работе сейчас. Полоса — относительно самого загруженного."
-          : `Объём и эффективность за ${year ?? "выбранный год"}. Полоса — composite score (winRate + объём + суммы + скорость).`}
+        Количество дел, которые сейчас находятся в работе или на исполнении.
       </p>
-      <div className="space-y-2 max-h-[480px] overflow-y-auto pr-1">
-        {sorted.length === 0 && (
+      <div className="divide-y divide-slate-100 max-h-[480px] overflow-y-auto pr-1">
+        {rows.length === 0 && (
           <p className="text-center py-6 text-sm text-muted-foreground">Нет данных по юристам</p>
         )}
-        {sorted.map((l, i) => {
-          const ws = workloadStyles[l.workloadLevel];
-          const isCurrent = viewMode === "current";
-          const barPct = isCurrent ? l.workloadPercent : l.compositeScore;
-          const barColor = isCurrent ? ws.bar :
-            l.compositeScore >= 70 ? "bg-emerald-500" :
-            l.compositeScore >= 45 ? "bg-amber-500" : "bg-red-400";
-          return (
-            <div key={l.name} className="flex items-start gap-3 p-2 rounded-md hover:bg-blue-50/40 transition-colors">
-              <div className="w-6 h-6 rounded-full bg-muted text-muted-foreground flex items-center justify-center text-[11px] font-bold flex-shrink-0 mt-0.5">
-                {i + 1}
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-sm font-medium truncate">{l.name}</span>
-                  {isCurrent && (
-                    <span className={cn("text-[10px] px-1.5 py-0.5 rounded font-semibold", ws.bg, ws.text)}>
-                      {ws.label}
-                    </span>
-                  )}
-                </div>
-                <div className="flex items-center gap-2 mt-1.5">
-                  <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
-                    <div className={cn("h-full rounded-full", barColor)} style={{ width: `${barPct}%` }} />
-                  </div>
-                  <span className="text-xs font-semibold tabular-nums w-10 text-right text-blue-900">
-                    {isCurrent ? `${l.activeNow}` : `${l.compositeScore}`}
-                  </span>
-                </div>
-                {isCurrent ? (
-                  <div className="flex gap-3 text-[11px] text-muted-foreground mt-1">
-                    <span>📋 {l.activeNow} активных</span>
-                    <span>✓ {l.won} побед</span>
-                    <span>📁 {l.totalCases} всего</span>
-                  </div>
-                ) : (
-                  <div className="flex gap-3 text-[11px] text-muted-foreground mt-1">
-                    <span>✓ {l.won}</span>
-                    <span>✗ {l.lost}</span>
-                    {year !== undefined && year < new Date().getFullYear() ? null : (
-                      <span>⧖ {l.activeNow} акт.</span>
-                    )}
-                    <span>{l.winRate}% win</span>
-                    <span>~{l.avgDays} дн.</span>
-                  </div>
-                )}
-              </div>
+        {rows.map((lawyer, index) => (
+          <div key={lawyer.name} className="flex items-center gap-3 py-2.5 hover:bg-blue-50/40 transition-colors">
+            <div className="w-6 h-6 rounded-full bg-muted text-muted-foreground flex items-center justify-center text-[11px] font-bold flex-shrink-0">
+              {index + 1}
             </div>
-          );
-        })}
+            <div className="min-w-0 flex-1 flex items-center gap-2">
+              <span className="text-sm font-medium truncate">{lawyer.name}</span>
+              {!lawyer.isActive && (
+                <span className="shrink-0 rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold text-slate-600">
+                  Не работает
+                </span>
+              )}
+            </div>
+            <span className="rounded-md bg-blue-50 px-2.5 py-1 text-sm font-semibold text-blue-800 tabular-nums">
+              {lawyer.activeNow}
+            </span>
+          </div>
+        ))}
       </div>
-      {viewMode === "current" && (
-        <div className="flex gap-3 mt-3 pt-3 border-t border-slate-100 text-[10px] text-muted-foreground flex-wrap">
-          <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-emerald-500" /> Свободен (≤3)</span>
-          <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-blue-500" /> Норма (4–7)</span>
-          <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-amber-500" /> Высокая (8–12)</span>
-          <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-red-500" /> Перегружен (&gt;12)</span>
-        </div>
-      )}
     </motion.div>
   );
 }

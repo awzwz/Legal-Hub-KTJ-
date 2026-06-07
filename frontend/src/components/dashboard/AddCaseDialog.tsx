@@ -154,7 +154,7 @@ const AddCaseDialog = ({ user }: { user: User }) => {
       toast({ variant: "destructive", title: "Не удалось создать дело", description: e.message });
     },
   });
-  const canSelectBranch = canViewAllCases(user);
+  const canSelectBranch = canViewAllCases(user) && user.role !== "branch_lawyer";
 
   const form = useForm<CaseFormValues>({
     resolver: zodResolver(formSchema),
@@ -193,6 +193,12 @@ const AddCaseDialog = ({ user }: { user: User }) => {
   const hearingNotSet = form.watch("hearingNotSet");
   const partyRole = form.watch("partyRole");
   const disputeCategory = form.watch("disputeCategory");
+  const calculatedClaimAmount =
+    form.watch("mainDebt") +
+    form.watch("stateFee") +
+    form.watch("fines") +
+    form.watch("repExpenses") +
+    form.watch("otherCosts");
 
   useEffect(() => {
     if (!open) {
@@ -248,7 +254,7 @@ const AddCaseDialog = ({ user }: { user: User }) => {
       defendant: isPlaintiff ? company : "АО «НК «КТЖ»",
       company,
       companyBIN: bin,
-      claimAmount: data.claimAmount,
+      claimAmount: data.mainDebt + data.stateFee + data.fines + data.repExpenses + data.otherCosts,
       mainDebt: data.mainDebt,
       stateFee: data.stateFee,
       fines: data.fines,
@@ -322,8 +328,8 @@ const AddCaseDialog = ({ user }: { user: User }) => {
                     <Select onValueChange={field.onChange} defaultValue={field.value}>
                       <FormControl><SelectTrigger><SelectValue placeholder="Выберите" /></SelectTrigger></FormControl>
                       <SelectContent>
-                        {Object.entries(caseTypeLabels).map(([k, v]) => (
-                          <SelectItem key={k} value={k}>{v}</SelectItem>
+                        {(["civil", "labor", "administrative", "criminal", "other"] as const).map((k) => (
+                          <SelectItem key={k} value={k}>{caseTypeLabels[k]}</SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
@@ -356,27 +362,43 @@ const AddCaseDialog = ({ user }: { user: User }) => {
                 <FormField control={form.control} name="branch" render={({ field }) => (
                   <FormItem>
                     <FormLabel>Участник</FormLabel>
-                    <Select onValueChange={field.onChange} defaultValue={field.value} disabled={!canSelectBranch}>
+                    {canSelectBranch ? (
+                      <Select onValueChange={field.onChange} defaultValue={field.value}>
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Выберите филиал" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          {branches.map(b => (
+                            <SelectItem key={b} value={b}>{b}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    ) : (
                       <FormControl>
-                        <SelectTrigger className={cn(!canSelectBranch && "bg-[hsl(220,14%,96%)] text-muted-foreground opacity-100")}>
-                          <SelectValue placeholder="Выберите филиал" />
-                        </SelectTrigger>
+                        <Input value={field.value || user.branch || ""} disabled className="bg-[hsl(220,14%,96%)] text-muted-foreground opacity-100" />
                       </FormControl>
-                      <SelectContent>
-                        {branches.map(b => (
-                          <SelectItem key={b} value={b}>{b}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    )}
                     <FormMessage />
                   </FormItem>
                 )} />
                 <FormField control={form.control} name="filingDate" render={({ field }) => (
                   <FormItem className="md:col-span-2 lg:col-span-3">
                     <FormLabel>Дата подачи иска в суд</FormLabel>
-                    <Popover>
-                      <PopoverTrigger asChild>
-                        <FormControl>
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                      <FormControl>
+                        <Input
+                          type="date"
+                          className="w-full max-w-[180px] border-blue-200"
+                          value={field.value ? format(field.value, "yyyy-MM-dd") : ""}
+                          onChange={(e) => {
+                            field.onChange(e.target.value ? new Date(`${e.target.value}T12:00:00`) : undefined);
+                          }}
+                        />
+                      </FormControl>
+                      <Popover>
+                        <PopoverTrigger asChild>
                           <Button
                             type="button"
                             variant="outline"
@@ -388,12 +410,12 @@ const AddCaseDialog = ({ user }: { user: User }) => {
                             <CalendarIcon className="mr-2 h-4 w-4 shrink-0" />
                             {field.value ? format(field.value, "d MMMM yyyy", { locale: ru }) : "Выберите дату"}
                           </Button>
-                        </FormControl>
-                      </PopoverTrigger>
-                      <PopoverContent className="w-auto p-0" align="start">
-                        <Calendar mode="single" selected={field.value} onSelect={field.onChange} locale={ru} initialFocus />
-                      </PopoverContent>
-                    </Popover>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-auto p-0" align="start">
+                          <Calendar mode="single" selected={field.value} onSelect={field.onChange} locale={ru} initialFocus />
+                        </PopoverContent>
+                      </Popover>
+                    </div>
                     <FormMessage />
                   </FormItem>
                 )} />
@@ -438,7 +460,7 @@ const AddCaseDialog = ({ user }: { user: User }) => {
 
                 <FormField control={form.control} name="opponentType" render={({ field }) => (
                   <FormItem className="space-y-3">
-                    <FormLabel>Тип оппонента</FormLabel>
+                    <FormLabel>Оппонент</FormLabel>
                     <FormControl>
                       <RadioGroup onValueChange={field.onChange} defaultValue={field.value} className="flex gap-4">
                         <FormItem className="flex items-center space-x-2 space-y-0">
@@ -537,6 +559,21 @@ const AddCaseDialog = ({ user }: { user: User }) => {
                     <FormMessage />
                   </FormItem>
                 )} />
+                <FormField control={form.control} name="otherCosts" render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Иные расходы (₸)</FormLabel>
+                    <FormControl>
+                      <MoneyAmountInput value={field.value} onChange={field.onChange} onBlur={field.onBlur} name={field.name} ref={field.ref} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )} />
+                <div className="rounded-md border border-[hsl(215,35%,88%)] bg-[hsl(220,14%,98%)] px-3 py-2">
+                  <p className="text-xs text-muted-foreground">Цена иска</p>
+                  <p className="mt-1 text-sm font-semibold text-[hsl(215,35%,15%)]">
+                    {calculatedClaimAmount.toLocaleString("ru-RU")} ₸
+                  </p>
+                </div>
               </div>
             </div>
 
@@ -562,7 +599,7 @@ const AddCaseDialog = ({ user }: { user: User }) => {
                 
                 <FormField control={form.control} name="riskLevel" render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Уровень значимости</FormLabel>
+                    <FormLabel>Риск</FormLabel>
                     <Select onValueChange={field.onChange} defaultValue={field.value}>
                       <FormControl>
                         <SelectTrigger className={cn(

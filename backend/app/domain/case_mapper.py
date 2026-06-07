@@ -14,6 +14,16 @@ from app.schemas.legal_case import (
 )
 
 
+def _doc_file_name(storage_key: Optional[str], doc_id: str) -> Optional[str]:
+    if not storage_key:
+        return None
+    name = storage_key.rsplit("/", 1)[-1]
+    prefix = f"{doc_id}_"
+    if name.startswith(prefix):
+        name = name[len(prefix) :]
+    return name or None
+
+
 def _d(v: Union[date, datetime]) -> str:
     if isinstance(v, datetime):
         return v.date().isoformat()
@@ -27,10 +37,10 @@ def _dt(v: Optional[datetime]) -> Optional[str]:
 
 
 def compute_significance(row: Case) -> str:
-    """Динамическая значимость дела (low / medium / high).
+    """Динамический риск дела (low / medium / high).
 
     База — сумма иска. Поверх — модификаторы:
-      • КТЖ выиграл и дело закрыто → понижаем на 1 уровень (значимость уходит вниз).
+      • КТЖ выиграл и дело закрыто → понижаем на 1 уровень (риск уходит вниз).
       • Просрочка (days_overdue > 0) → повышаем на 1 уровень (срочность важнее размера).
       • Дело открытое (любой не-closed/withdrawn статус) И мы ответчик → удерживаем минимум medium
         даже для маленьких сумм — потому что любой проигрыш = реальные деньги наружу.
@@ -70,9 +80,22 @@ def compute_significance(row: Case) -> str:
     return levels[idx]
 
 
+def effective_significance(row: Case) -> str:
+    """User-facing significance.
+
+    Юристы управляют риском вручную. Авторасчет оставляем только как
+    fallback для старых/битых строк, где значение не заполнено корректно.
+    """
+    manual = (row.risk_level or "").strip().lower()
+    if manual in {"low", "medium", "high"}:
+        return manual
+    return compute_significance(row)
+
+
 def case_to_legal_case_out(row: Case) -> LegalCaseOut:
     fin = row.finances
     lawyer = row.assigned_lawyer.full_name if row.assigned_lawyer else ""
+    lawyer_is_active = bool(row.assigned_lawyer.is_active) if row.assigned_lawyer else False
     branch_name = row.branch.name
 
     payments = [
@@ -92,6 +115,10 @@ def case_to_legal_case_out(row: Case) -> LegalCaseOut:
             title=d.title,
             upload_date=_d(d.created_at),
             author=d.author_name,
+            file_name=_doc_file_name(d.storage_key, str(d.id)),
+            mime_type=d.mime_type,
+            size_bytes=d.size_bytes or 0,
+            download_url=f"/api/v1/cases/{row.id}/documents/{d.id}/download" if d.storage_key else None,
         )
         for d in sorted(row.documents, key=lambda x: x.created_at)
     ]
@@ -203,6 +230,7 @@ def case_to_legal_case_out(row: Case) -> LegalCaseOut:
         recovered_rep_expenses=float(fin.recovered_rep_expenses),
         dispute_category=row.dispute_category or "procurement",
         assigned_lawyer=lawyer,
+        assigned_lawyer_is_active=lawyer_is_active,
         branch_id=str(row.branch_id),
         assigned_lawyer_id=str(row.assigned_lawyer_id) if row.assigned_lawyer_id else None,
         branch=branch_name,
@@ -213,7 +241,7 @@ def case_to_legal_case_out(row: Case) -> LegalCaseOut:
         payment_deadline=_d(row.payment_deadline) if row.payment_deadline else None,
         days_overdue=row.days_overdue,
         last_updated=_d(row.last_updated),
-        risk_level=compute_significance(row),
+        risk_level=effective_significance(row),
         payments=payments,
         documents=documents,
         comments=comments,

@@ -39,6 +39,10 @@ class CaseDocumentOut(CamelModel):
     title: str
     upload_date: str
     author: str
+    file_name: Optional[str] = None
+    mime_type: Optional[str] = None
+    size_bytes: int = 0
+    download_url: Optional[str] = None
 
 
 class CreateCaseDocumentBody(CamelModel):
@@ -101,6 +105,7 @@ class LegalCaseOut(CamelModel):
     recovered_rep_expenses: float = 0.0
     dispute_category: str = "procurement"
     assigned_lawyer: str
+    assigned_lawyer_is_active: bool = True
     branch_id: str = Field(serialization_alias="branchId", validation_alias="branchId")
     assigned_lawyer_id: Optional[str] = Field(
         default=None, serialization_alias="assignedLawyerId", validation_alias="assignedLawyerId"

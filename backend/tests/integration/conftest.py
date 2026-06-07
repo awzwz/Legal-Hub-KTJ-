@@ -29,6 +29,7 @@ def pytest_collection_modifyitems(config, items):
 async def _schema_once():
     """Создаём схему один раз на сессию — иначе asyncpg pool привязывается к
     разным event-loops между тестами."""
+    import app.models  # noqa: F401 - register ORM models before create_all
     from app.db.base import Base
     from app.db.session import engine
 

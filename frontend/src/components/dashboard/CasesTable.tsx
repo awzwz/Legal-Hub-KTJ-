@@ -86,7 +86,7 @@ const CasesTable = ({ onCaseClick, cases }: CasesTableProps) => {
                 <th className="text-right px-4 py-3 text-xs font-semibold uppercase tracking-wider text-blue-700">Взыскано</th>
                 <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-blue-700">Юрист</th>
                 <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-blue-700">Филиал</th>
-                <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-blue-700">Значимость</th>
+                <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-blue-700">Риск</th>
                 <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-blue-700">Просрочка</th>
               </tr>
             </thead>

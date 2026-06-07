@@ -10,10 +10,17 @@
 # Запуск:
 #   docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build
 
+x-logging: &default_logging
+  driver: local
+  options:
+    max-size: "20m"
+    max-file: "5"
+
 services:
   db:
     image: postgres:15-alpine
     restart: unless-stopped
+    logging: *default_logging
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
@@ -30,7 +37,8 @@ services:
   redis:
     image: redis:7-alpine
     restart: unless-stopped
-    command: ["redis-server", "--save", "60", "1", "--loglevel", "warning"]
+    logging: *default_logging
+    command: ["redis-server", "--appendonly", "yes", "--appendfsync", "everysec", "--save", "60", "1", "--loglevel", "warning"]
     volumes:
       - /opt/legalhub/redisdata:/data
     healthcheck:
@@ -43,6 +51,7 @@ services:
     build:
       context: ../../backend
       dockerfile: Dockerfile
+    logging: *default_logging
     command: ["alembic", "upgrade", "head"]
     environment: &api_env
       ENV: ${ENV:-production}
@@ -50,11 +59,13 @@ services:
       REDIS_URL: redis://redis:6379/0
       RELAX_AUTH: ${RELAX_AUTH:-false}
       AUTO_DDL: ${AUTO_DDL:-false}
+      DEMO_SEED_ENABLED: ${DEMO_SEED_ENABLED:-false}
       JWT_SECRET: ${JWT_SECRET}
       INTERNAL_API_KEY: ${INTERNAL_API_KEY}
       CORS_ORIGINS: ${CORS_ORIGINS}
       COOKIE_SECURE: ${COOKIE_SECURE:-true}
       COOKIE_SAMESITE: ${COOKIE_SAMESITE:-strict}
+      CASE_DOCUMENT_STORAGE_DIR: ${CASE_DOCUMENT_STORAGE_DIR:-/app/storage/case-documents}
       LOG_JSON: "true"
     depends_on:
       db:
@@ -65,6 +76,7 @@ services:
       context: ../../backend
       dockerfile: Dockerfile
     restart: unless-stopped
+    logging: *default_logging
     command: ["uvicorn", "app.entrypoints.iam:app", "--host", "0.0.0.0", "--port", "8001"]
     environment: *api_env
     depends_on:
@@ -79,8 +91,11 @@ services:
       context: ../../backend
       dockerfile: Dockerfile
     restart: unless-stopped
+    logging: *default_logging
     command: ["uvicorn", "app.entrypoints.legal:app", "--host", "0.0.0.0", "--port", "8002"]
     environment: *api_env
+    volumes:
+      - /opt/legalhub/case_documents:/app/storage/case-documents
     depends_on:
       db: { condition: service_healthy }
       redis: { condition: service_healthy }
@@ -93,6 +108,7 @@ services:
       context: ../../backend
       dockerfile: Dockerfile
     restart: unless-stopped
+    logging: *default_logging
     command: ["uvicorn", "app.entrypoints.workspace:app", "--host", "0.0.0.0", "--port", "8003"]
     environment: *api_env
     depends_on:
@@ -107,6 +123,7 @@ services:
       context: ../../backend
       dockerfile: Dockerfile
     restart: unless-stopped
+    logging: *default_logging
     command: ["uvicorn", "app.entrypoints.reporting:app", "--host", "0.0.0.0", "--port", "8004"]
     environment: *api_env
     depends_on:
@@ -121,6 +138,7 @@ services:
       context: ../..
       dockerfile: frontend/Dockerfile
     restart: unless-stopped
+    logging: *default_logging
     expose:
       - "80"
     depends_on:
@@ -132,15 +150,16 @@ services:
   caddy:
     image: caddy:2-alpine
     restart: unless-stopped
+    logging: *default_logging
     ports:
       - "80:80"
       - "443:443"
     environment:
       LEGALHUB_DOMAIN: ${LEGALHUB_DOMAIN}
       LETS_ENCRYPT_EMAIL: ${LETS_ENCRYPT_EMAIL}
-      # Пробел-разделённый список IP/CIDR (см. Caddyfile). По умолчанию — весь интернет.
+      # Пробел-разделённый список IP/CIDR (см. Caddyfile). Обязателен: default deny.
       # Пример только ваш офис: SITE_ALLOWED_IPS=203.0.113.5/32 2001:db8::1/128
-      SITE_ALLOWED_IPS: "${SITE_ALLOWED_IPS:-0.0.0.0/0 ::/0}"
+      SITE_ALLOWED_IPS: "${SITE_ALLOWED_IPS:?Set SITE_ALLOWED_IPS to allowed IPs or CIDRs}"
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - /opt/legalhub/caddy_data:/data

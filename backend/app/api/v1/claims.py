@@ -11,12 +11,30 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.deps import get_current_user, user_branch_filter
+from app.core.permissions import require_can_mutate
 from app.db.session import get_db
-from app.models import Case, Claim, User
+from app.models import Branch, Case, Claim, User
 from app.schemas.claim import CaseShortOut, ClaimCreate, ClaimOut, ClaimUpdate
 from app.domain import claims_excel_export
 
 router = APIRouter(prefix="/claims", tags=["claims"])
+
+
+async def _validate_assignment(
+    db: AsyncSession,
+    *,
+    branch_id: Optional[UUID],
+    assigned_lawyer_id: Optional[UUID],
+) -> None:
+    if branch_id is not None and await db.get(Branch, branch_id) is None:
+        raise HTTPException(status_code=404, detail="Филиал не найден")
+    if assigned_lawyer_id is None:
+        return
+    lawyer = await db.get(User, assigned_lawyer_id)
+    if lawyer is None:
+        raise HTTPException(status_code=404, detail="Назначенный юрист не найден")
+    if branch_id is not None and lawyer.branch_id is not None and lawyer.branch_id != branch_id:
+        raise HTTPException(status_code=400, detail="Назначенный юрист относится к другому филиалу")
 
 
 def _to_out(c: Claim) -> dict:
@@ -99,9 +117,10 @@ async def list_claims(
 async def create_claim(
     body: ClaimCreate,
     db: Annotated[AsyncSession, Depends(get_db)],
-    user: Annotated[User, Depends(get_current_user)],
+    user: Annotated[User, Depends(require_can_mutate)],
 ):
     # Если case_id указан — проверим, что дело существует и доступно пользователю.
+    case = None
     if body.case_id is not None:
         case = await db.get(Case, body.case_id)
         if case is None:
@@ -109,6 +128,21 @@ async def create_claim(
         bf = user_branch_filter(user)
         if bf is not None and case.branch_id != bf:
             raise HTTPException(status_code=403, detail="Нет доступа к этому делу")
+
+    bf = user_branch_filter(user)
+    if bf is not None and body.branch_id is not None and body.branch_id != bf:
+        raise HTTPException(status_code=403, detail="Нельзя создать претензию для другого филиала")
+    target_branch_id = bf or body.branch_id or user.branch_id
+    if case is not None:
+        if target_branch_id is None:
+            target_branch_id = case.branch_id
+        elif target_branch_id != case.branch_id:
+            raise HTTPException(status_code=400, detail="Связанное дело относится к другому филиалу")
+    await _validate_assignment(
+        db,
+        branch_id=target_branch_id,
+        assigned_lawyer_id=body.assigned_lawyer_id,
+    )
 
     claim = Claim(
         counterparty_name=body.counterparty_name,
@@ -120,7 +154,7 @@ async def create_claim(
         status=body.status,
         status_detail=body.status_detail,
         notes=body.notes,
-        branch_id=body.branch_id or user_branch_filter(user) or user.branch_id,
+        branch_id=target_branch_id,
         assigned_lawyer_id=body.assigned_lawyer_id,
         case_id=body.case_id,
     )
@@ -185,7 +219,7 @@ async def patch_claim(
     claim_id: UUID,
     body: ClaimUpdate,
     db: Annotated[AsyncSession, Depends(get_db)],
-    user: Annotated[User, Depends(get_current_user)],
+    user: Annotated[User, Depends(require_can_mutate)],
 ):
     claim = await db.get(Claim, claim_id)
     if claim is None:
@@ -195,13 +229,29 @@ async def patch_claim(
         raise HTTPException(status_code=403, detail="Нет доступа")
 
     data = body.model_dump(exclude_unset=True)
-    # Проверим, что новое case_id доступно.
-    if "case_id" in data and data["case_id"] is not None:
-        case = await db.get(Case, data["case_id"])
+    target_branch_id = data.get("branch_id", claim.branch_id)
+    if bf is not None and target_branch_id != bf:
+        raise HTTPException(status_code=403, detail="Нельзя перенести претензию в другой филиал")
+
+    # Проверим, что связанное дело существует, доступно и относится к тому же филиалу.
+    target_case_id = data.get("case_id", claim.case_id)
+    if target_case_id is not None:
+        case = await db.get(Case, target_case_id)
         if case is None:
             raise HTTPException(status_code=404, detail="Связанное дело не найдено")
         if bf is not None and case.branch_id != bf:
             raise HTTPException(status_code=403, detail="Нет доступа к этому делу")
+        if target_branch_id is None:
+            target_branch_id = case.branch_id
+            data["branch_id"] = target_branch_id
+        elif target_branch_id != case.branch_id:
+            raise HTTPException(status_code=400, detail="Связанное дело относится к другому филиалу")
+
+    await _validate_assignment(
+        db,
+        branch_id=target_branch_id,
+        assigned_lawyer_id=data.get("assigned_lawyer_id", claim.assigned_lawyer_id),
+    )
 
     for k, v in data.items():
         setattr(claim, k, v)
@@ -214,7 +264,7 @@ async def patch_claim(
 async def delete_claim(
     claim_id: UUID,
     db: Annotated[AsyncSession, Depends(get_db)],
-    user: Annotated[User, Depends(get_current_user)],
+    user: Annotated[User, Depends(require_can_mutate)],
 ):
     claim = await db.get(Claim, claim_id)
     if claim is None:

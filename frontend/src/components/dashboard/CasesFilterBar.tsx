@@ -1,14 +1,20 @@
 import { useState, useMemo } from "react";
-import { Search, Filter, X, Eye } from "lucide-react";
-import { caseOutcomeLabels, courtInstanceLabels, caseTypeLabels, partyRoleLabels, branches, canViewAllBranches, disputeCategoryLabels, visibleCaseStatuses, caseStatusGroup, type CaseStatus, type CaseOutcome, type CourtInstance, type CaseType, type PartyRole, type DisputeCategory, type LegalCase } from "@/data/mockData";
+import { Search, Filter, X, Eye, CalendarRange } from "lucide-react";
+import { caseOutcomeLabels, courtInstanceLabels, caseTypeLabels, partyRoleLabels, branches, canViewAllBranches, disputeCategoryLabels, visibleCaseStatuses, type CaseStatus, type CaseOutcome, type CourtInstance, type CaseType, type PartyRole, type DisputeCategory, type LegalCase } from "@/data/mockData";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { cn } from "@/lib/utils";
+import { filterCases } from "@/lib/filterCases";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 
+export type FilterYear = "all" | "2026" | "2025";
+export type FilterPeriod = "full" | "q1" | "q2" | "q3" | "q4";
+
 export interface CaseFilters {
   search: string;
+  year: FilterYear;
+  period: FilterPeriod;
   status: CaseStatus | "all";
   outcome: CaseOutcome | "all";
   courtInstance: CourtInstance | "all";
@@ -33,18 +39,34 @@ export interface CaseFilters {
 }
 
 const defaultFilters: CaseFilters = {
-  search: "", 
-  status: "all", 
+  search: "",
+  year: "2026",
+  period: "full",
+  status: "all",
   outcome: "all",
-  courtInstance: "all", 
-  caseType: "all", 
+  courtInstance: "all",
+  caseType: "all",
   partyRole: "all",
   disputeCategory: "all",
-  branch: "all", 
-  lawyer: "all", 
+  branch: "all",
+  lawyer: "all",
   overdueOnly: false,
   claimAmountFrom: "",
   claimAmountTo: ""
+};
+
+const yearLabels: Record<FilterYear, string> = {
+  "2026": "2026",
+  "2025": "2025",
+  all: "Все годы",
+};
+
+const periodLabels: Record<FilterPeriod, string> = {
+  full: "Весь год",
+  q1: "Q1 (январь–март)",
+  q2: "Q2 (апрель–июнь)",
+  q3: "Q3 (июль–сентябрь)",
+  q4: "Q4 (октябрь–декабрь)",
 };
 
 interface CasesFilterBarProps {
@@ -68,8 +90,11 @@ const CasesFilterBar = ({ filters, onFiltersChange, resultCount, lawyerOptions }
     if (k === "overdueOnly") return v === true;
     if (k === "claimAmountFrom") return v !== "";
     if (k === "claimAmountTo") return v !== "";
-    if (k === "outcomeIn" || k === "statusIn" || k === "riskLevelIn" || k === "caseIdIn") return Array.isArray(v) && v.length > 0;
+    if (k === "caseIdIn") return Array.isArray(v);
+    if (k === "outcomeIn" || k === "statusIn" || k === "riskLevelIn") return Array.isArray(v) && v.length > 0;
     if (k === "presetLabel") return false;
+    if (k === "year") return v !== "2026"; // dashboard default
+    if (k === "period") return v !== "full";
     return v !== "all";
   }).length;
 
@@ -84,16 +109,48 @@ const CasesFilterBar = ({ filters, onFiltersChange, resultCount, lawyerOptions }
 
   return (
     <div className="bg-white rounded-xl border border-[hsl(215,35%,90%)] shadow-sm p-4 space-y-4">
-      <div className="flex items-center gap-3">
-        <div className="relative flex-1 max-w-sm">
+      <div className="flex items-center gap-3 flex-wrap">
+        <div className="relative flex-1 min-w-[240px] max-w-sm">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[hsl(215,20%,55%)]" />
           <Input
             type="text"
-            placeholder="Поиск по номеру, БИН, компании..."
+            placeholder="Поиск по наименованию, БИН, номеру дела …"
             value={filters.search}
             onChange={e => update({ search: e.target.value })}
             className="w-full pl-9"
           />
+        </div>
+
+        <div className="flex items-center gap-2">
+          <CalendarRange className="w-4 h-4 text-blue-600" />
+          <span className="text-sm text-blue-700 font-medium">Год:</span>
+          <Select
+            value={filters.year}
+            onValueChange={(v) => {
+              const y = v as FilterYear;
+              update({ year: y, period: y === "all" ? "full" : filters.period });
+            }}
+          >
+            <SelectTrigger className="h-9 w-[120px]"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              {(Object.keys(yearLabels) as FilterYear[]).map((y) => (
+                <SelectItem key={y} value={y}>{yearLabels[y]}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <span className="text-sm text-blue-700 font-medium ml-1">Период:</span>
+          <Select
+            value={filters.period}
+            onValueChange={(v) => update({ period: v as FilterPeriod })}
+            disabled={filters.year === "all"}
+          >
+            <SelectTrigger className="h-9 w-[180px]"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              {(Object.keys(periodLabels) as FilterPeriod[]).map((p) => (
+                <SelectItem key={p} value={p}>{periodLabels[p]}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
 
         <Button
@@ -296,39 +353,5 @@ const CasesFilterBar = ({ filters, onFiltersChange, resultCount, lawyerOptions }
 export { CasesFilterBar, defaultFilters };
 
 export const useFilteredCases = (filters: CaseFilters, cases?: LegalCase[]) => {
-  const sourceCases = cases ?? [];
-  return useMemo(() => {
-    return sourceCases.filter(c => {
-      if (filters.search) {
-        const q = filters.search.toLowerCase();
-        const match = c.caseNumber.toLowerCase().includes(q) || c.company.toLowerCase().includes(q) || c.companyBIN.includes(q) || c.assignedLawyer.toLowerCase().includes(q) || c.defendant.toLowerCase().includes(q) || c.plaintiff.toLowerCase().includes(q);
-        if (!match) return false;
-      }
-      if (filters.statusIn && filters.statusIn.length > 0) {
-        if (!filters.statusIn.includes(c.status)) return false;
-      } else if (filters.status !== "all") {
-        const targetGroup = caseStatusGroup[filters.status as CaseStatus];
-        if (caseStatusGroup[c.status] !== targetGroup) return false;
-      }
-      if (filters.outcomeIn && filters.outcomeIn.length > 0) {
-        if (!filters.outcomeIn.includes(c.outcome)) return false;
-      } else if (filters.outcome !== "all" && c.outcome !== filters.outcome) return false;
-      if (filters.riskLevelIn && filters.riskLevelIn.length > 0) {
-        if (!filters.riskLevelIn.includes(c.riskLevel as "high" | "medium" | "low")) return false;
-      }
-      if (filters.caseIdIn && filters.caseIdIn.length > 0) {
-        if (!filters.caseIdIn.includes(c.id)) return false;
-      }
-      if (filters.courtInstance !== "all" && c.courtInstance !== filters.courtInstance) return false;
-      if (filters.caseType !== "all" && c.caseType !== filters.caseType) return false;
-      if (filters.partyRole !== "all" && c.partyRole !== filters.partyRole) return false;
-      if (filters.disputeCategory !== "all" && (c.disputeCategory ?? "procurement") !== filters.disputeCategory) return false;
-      if (filters.branch !== "all" && c.branch !== filters.branch) return false;
-      if (filters.lawyer !== "all" && c.assignedLawyer !== filters.lawyer) return false;
-      if (filters.overdueOnly && c.daysOverdue === 0) return false;
-      if (filters.claimAmountFrom !== "" && c.claimAmount < Number(filters.claimAmountFrom)) return false;
-      if (filters.claimAmountTo !== "" && c.claimAmount > Number(filters.claimAmountTo)) return false;
-      return true;
-    });
-  }, [filters, sourceCases]);
+  return useMemo(() => filterCases(filters, cases ?? []), [filters, cases]);
 };

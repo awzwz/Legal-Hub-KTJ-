@@ -3,8 +3,8 @@ from __future__ import annotations
 from typing import Annotated, Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query
-from fastapi.responses import JSONResponse
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
+from fastapi.responses import FileResponse, JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.responses import Response
 
@@ -19,7 +19,6 @@ from app.schemas.case_extensions import (
     PatchEnforcementBody,
 )
 from app.schemas.legal_case import (
-    CreateCaseDocumentBody,
     CreateCommentBody,
     CreateLegalCaseBody,
     LegalCaseOut,
@@ -73,6 +72,16 @@ async def patch_case(
     return JSONResponse(row.model_dump(mode="json", by_alias=True))
 
 
+@router.delete("/{case_id}", status_code=204, summary="Delete case (cascade)")
+async def delete_case(
+    case_id: UUID,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    user: Annotated[User, Depends(get_current_user)],
+):
+    await case_service.delete_case(db, user, case_id)
+    return Response(status_code=204)
+
+
 @router.post("/{case_id}/comments", summary="Add comment (+ timeline event)")
 async def add_comment(
     case_id: UUID,
@@ -84,17 +93,27 @@ async def add_comment(
     return JSONResponse(row.model_dump(mode="json", by_alias=True))
 
 
-@router.post("/{case_id}/documents", status_code=201, summary="Create document record (metadata)")
+@router.post("/{case_id}/documents", status_code=201, summary="Upload document")
 async def create_case_document(
     case_id: UUID,
-    body: CreateCaseDocumentBody,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    user: Annotated[User, Depends(get_current_user)],
+    title: Annotated[str, Form(min_length=1, max_length=512)],
+    file: Annotated[UploadFile, File()],
+):
+    doc = await case_service.add_case_document(db, user, case_id, title=title, file=file)
+    return JSONResponse(doc.model_dump(mode="json", by_alias=True), status_code=201)
+
+
+@router.get("/{case_id}/documents/{document_id}/download", summary="Download document")
+async def download_case_document(
+    case_id: UUID,
+    document_id: UUID,
     db: Annotated[AsyncSession, Depends(get_db)],
     user: Annotated[User, Depends(get_current_user)],
 ):
-    doc = await case_service.add_case_document(
-        db, user, case_id, title=body.title, file_name=body.file_name
-    )
-    return JSONResponse(doc.model_dump(mode="json", by_alias=True), status_code=201)
+    doc, path, file_name = await case_service.get_case_document_download(db, user, case_id, document_id)
+    return FileResponse(path, media_type=doc.mime_type or "application/octet-stream", filename=file_name)
 
 
 @router.delete("/{case_id}/documents/{document_id}", status_code=204, summary="Delete document")

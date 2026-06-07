@@ -5,7 +5,7 @@ import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { useCases } from "@/hooks/useCases";
 import { toast } from "@/hooks/use-toast";
 import { apiAuthHeaders, apiJsonHeaders } from "@/lib/api";
-import { ArrowLeft, Calendar, MapPin, User, Building2, Scale, FileText, Clock, MessageSquare, History, CreditCard, ThumbsUp, Send, ShieldAlert, Eye, Lock, Paperclip, Trash2, Gavel, BriefcaseBusiness, HandCoins } from "lucide-react";
+import { ArrowLeft, Calendar, MapPin, User, Building2, Scale, FileText, Clock, MessageSquare, History, CreditCard, ThumbsUp, Send, ShieldAlert, Eye, Lock, Paperclip, Trash2, Gavel, BriefcaseBusiness, HandCoins, Download } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { motion, AnimatePresence } from "framer-motion";
 import { Input } from "@/components/ui/input";
@@ -31,6 +31,13 @@ interface CaseDetailProps {
 }
 
 type Tab = "info" | "documents" | "payments" | "comments" | "timeline" | "litigation" | "enforcement" | "debt";
+
+const formatFileSize = (bytes?: number) => {
+  if (!bytes || bytes <= 0) return "";
+  if (bytes < 1024) return `${bytes} Б`;
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} КБ`;
+  return `${(bytes / (1024 * 1024)).toFixed(bytes < 10 * 1024 * 1024 ? 1 : 0)} МБ`;
+};
 
 type CaseInfoDraft = {
   court: string;
@@ -196,6 +203,8 @@ const CaseDetail = ({ caseId, onBack }: CaseDetailProps) => {
   const [infoEditing, setInfoEditing] = useState(false);
   const [infoDraft, setInfoDraft] = useState<CaseInfoDraft | null>(null);
   const [savingInfo, setSavingInfo] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const qc = useQueryClient();
   const { data: branchOptions = [] } = useQuery({
     queryKey: ["branches"],
@@ -285,6 +294,34 @@ const CaseDetail = ({ caseId, onBack }: CaseDetailProps) => {
   const canEdit = canEditCase(user, caseData);
   const canViewAll = canViewAllCases(user);
   const isRestricted = !canViewAll && caseData.branch !== user.branch;
+  const canDeleteCase = user.role === "director" || user.role === "chief_lawyer";
+
+  const handleDeleteCase = async () => {
+    setDeleting(true);
+    try {
+      const res = await fetch(`/api/v1/cases/${caseData.id}`, {
+        method: "DELETE",
+        headers: apiAuthHeaders(),
+      });
+      if (!res.ok && res.status !== 204) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error((body as { message?: string }).message || `Ошибка ${res.status}`);
+      }
+      await qc.invalidateQueries({ queryKey: ["cases"] });
+      await qc.invalidateQueries({ queryKey: ["notifications"] });
+      toast({ title: "Дело удалено", description: `Дело ${caseData.caseNumber} и все связанные данные удалены.` });
+      setDeleteOpen(false);
+      onBack();
+    } catch (e) {
+      toast({
+        variant: "destructive",
+        title: "Не удалось удалить",
+        description: e instanceof Error ? e.message : "Неизвестная ошибка",
+      });
+    } finally {
+      setDeleting(false);
+    }
+  };
 
   const canUserDeleteDocument = (doc: CaseDocument) =>
     user.role === "director" || doc.author.trim() === user.name.trim();
@@ -296,6 +333,39 @@ const CaseDetail = ({ caseId, onBack }: CaseDetailProps) => {
   const docPendingDelete =
     documentDeleteId == null ? undefined : caseData.documents?.find((x) => x.id === documentDeleteId);
   const canConfirmDocumentDelete = docPendingDelete ? canUserDeleteDocument(docPendingDelete) : false;
+
+  const downloadDocument = async (doc: CaseDocument) => {
+    const downloadUrl =
+      doc.downloadUrl || `/api/v1/cases/${encodeURIComponent(caseId)}/documents/${encodeURIComponent(doc.id)}/download`;
+    try {
+      const res = await fetch(downloadUrl, { headers: apiAuthHeaders() });
+      if (!res.ok) {
+        let msg = `Ошибка ${res.status}`;
+        try {
+          const j = (await res.json()) as { detail?: string; message?: string };
+          msg = j.detail || j.message || msg;
+        } catch {
+          /* ignore */
+        }
+        throw new Error(msg);
+      }
+      const blob = await res.blob();
+      const href = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = href;
+      a.download = doc.fileName || doc.title || "document";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(href);
+    } catch (err) {
+      toast({
+        variant: "destructive",
+        title: "Не удалось скачать",
+        description: err instanceof Error ? err.message : "Неизвестная ошибка",
+      });
+    }
+  };
 
   const readMoney = (s: string) => Number(String(s).replace(/\s/g, "").replace(",", ".")) || 0;
   const finView =
@@ -337,7 +407,7 @@ const CaseDetail = ({ caseId, onBack }: CaseDetailProps) => {
     { label: "Прочие издержки", value: finView.otherCosts, pct: (finView.otherCosts / totalDebt) * 100 || 0 },
   ];
 
-  const caseTypeKeys = Object.keys(caseTypeLabels) as CaseType[];
+  const caseTypeKeys: CaseType[] = ["civil", "labor", "administrative", "criminal", "other"];
   const courtInstKeys = Object.keys(courtInstanceLabels) as CourtInstance[];
   const partyRoleKeys = Object.keys(partyRoleLabels) as PartyRole[];
   const statusKeys: CaseStatus[] = ["active", "execution"]; // только два видимых статуса
@@ -407,7 +477,7 @@ const CaseDetail = ({ caseId, onBack }: CaseDetailProps) => {
   ];
 
   const riskColors = { low: "bg-green-100 text-green-700 border border-green-200", medium: "bg-blue-100 text-blue-700 border border-blue-200", high: "bg-red-100 text-red-700 border border-red-200" };
-  const riskLabels = { low: "Низкая значимость", medium: "Средняя значимость", high: "Высокая значимость" };
+  const riskLabels = { low: "Низкий риск", medium: "Средний риск", high: "Высокий риск" };
 
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
@@ -441,15 +511,51 @@ const CaseDetail = ({ caseId, onBack }: CaseDetailProps) => {
           </div>
           <p className="text-sm text-blue-600 mt-1">{caseData.court} · Судья: {caseData.judge}</p>
         </div>
-        <span className={cn("inline-flex items-center rounded-full px-3 py-1 text-sm font-medium border",
-          caseData.status === "closed" ? "bg-green-100 text-green-700 border-green-200" :
-          caseData.outcome === "fully_satisfied" ? "bg-green-100 text-green-700 border-green-200" :
-          caseData.outcome === "denied" ? "bg-red-100 text-red-700 border-red-200" :
-          "bg-blue-100 text-blue-700 border-blue-200"
-        )}>
-          {caseStatusLabels[caseData.status]}
-        </span>
+        <div className="flex items-center gap-2">
+          <span className={cn("inline-flex items-center rounded-full px-3 py-1 text-sm font-medium border",
+            caseData.status === "closed" ? "bg-green-100 text-green-700 border-green-200" :
+            caseData.outcome === "fully_satisfied" ? "bg-green-100 text-green-700 border-green-200" :
+            caseData.outcome === "denied" ? "bg-red-100 text-red-700 border-red-200" :
+            "bg-blue-100 text-blue-700 border-blue-200"
+          )}>
+            {caseStatusLabels[caseData.status]}
+          </span>
+          {canDeleteCase && !isRestricted && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8 gap-1.5 text-red-700 border-red-200 hover:bg-red-50 hover:text-red-800"
+              onClick={() => setDeleteOpen(true)}
+              title="Удалить дело и все связанные данные"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              Удалить дело
+            </Button>
+          )}
+        </div>
       </div>
+
+      <AlertDialog open={deleteOpen} onOpenChange={(o) => !deleting && setDeleteOpen(o)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Удалить дело {caseData.caseNumber}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Будут удалены сразу и навсегда: финансы, комментарии, документы, процедурные дедлайны,
+              исполнительные производства, история событий и связанные претензии. Действие необратимо.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>Отмена</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDeleteCase}
+              disabled={deleting}
+              className="bg-red-600 hover:bg-red-700 focus:ring-red-600"
+            >
+              {deleting ? "Удаление…" : "Удалить безвозвратно"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <ProceduralDeadlinesBlock caseId={caseData.id} />
       <RelatedClaimsBlock caseId={caseData.id} />
@@ -531,7 +637,7 @@ const CaseDetail = ({ caseId, onBack }: CaseDetailProps) => {
               <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
                 <div><p className="text-blue-500 text-xs">Тип дела</p><p className="font-medium text-blue-900">{caseTypeLabels[caseData.caseType] || caseData.caseType}</p></div>
                 <div><p className="text-blue-500 text-xs">Инстанция</p><p className="font-medium text-blue-900">{courtInstanceLabels[caseData.courtInstance]}</p></div>
-                <div><p className="text-blue-500 text-xs">Роль в суде</p><p className="font-medium text-blue-900">{partyRoleLabels[caseData.partyRole]}</p></div>
+                <div><p className="text-blue-500 text-xs">Сторона в суде</p><p className="font-medium text-blue-900">{partyRoleLabels[caseData.partyRole]}</p></div>
                 <div><p className="text-blue-500 text-xs">Сумма иска</p><p className="font-medium text-blue-900">{formatAmount(caseData.claimAmount)}</p></div>
                 <div><p className="text-blue-500 text-xs">Дата подачи</p><p className="font-medium text-blue-900">{caseData.filingDate}</p></div>
                 <div><p className="text-blue-500 text-xs">Обновлено</p><p className="font-medium text-blue-900">{caseData.lastUpdated}</p></div>
@@ -613,7 +719,7 @@ const CaseDetail = ({ caseId, onBack }: CaseDetailProps) => {
                       </select>
                     </div>
                     <div>
-                      <Label className="text-xs text-blue-600">Роль в суде</Label>
+                      <Label className="text-xs text-blue-600">Сторона в суде</Label>
                       <select
                         className="mt-1 w-full h-9 rounded-md border border-input bg-background px-2 text-sm"
                         value={infoDraft.partyRole}
@@ -668,7 +774,7 @@ const CaseDetail = ({ caseId, onBack }: CaseDetailProps) => {
                       </select>
                     </div>
                     <div>
-                      <Label className="text-xs text-blue-600">Значимость</Label>
+                      <Label className="text-xs text-blue-600">Риск</Label>
                       <select
                         className="mt-1 w-full h-9 rounded-md border border-input bg-background px-2 text-sm"
                         value={infoDraft.riskLevel}
@@ -692,7 +798,7 @@ const CaseDetail = ({ caseId, onBack }: CaseDetailProps) => {
                       />
                     </div>
                     <div>
-                      <Label className="text-xs text-blue-600">Дата подачи</Label>
+                      <Label className="text-xs text-blue-600">Дата подачи иска</Label>
                       <Input
                         type="date"
                         className="mt-1"
@@ -1006,11 +1112,11 @@ const CaseDetail = ({ caseId, onBack }: CaseDetailProps) => {
                   <Textarea className="mt-1 min-h-[80px]" value={litJ1} onChange={(e) => setLitJ1(e.target.value)} disabled={!canEdit || isRestricted} />
                 </div>
                 <div>
-                  <Label className="text-xs text-blue-600">Апелляция</Label>
+                  <Label className="text-xs text-blue-600">Дата рассмотрения в апелляционном порядке и результат</Label>
                   <Textarea className="mt-1 min-h-[60px]" value={litAppeal} onChange={(e) => setLitAppeal(e.target.value)} disabled={!canEdit || isRestricted} />
                 </div>
                 <div>
-                  <Label className="text-xs text-blue-600">Кассация</Label>
+                  <Label className="text-xs text-blue-600">Дата рассмотрения дела в кассационной порядке и результат</Label>
                   <Textarea className="mt-1 min-h-[60px]" value={litCass} onChange={(e) => setLitCass(e.target.value)} disabled={!canEdit || isRestricted} />
                 </div>
                 <div>
@@ -1020,15 +1126,15 @@ const CaseDetail = ({ caseId, onBack }: CaseDetailProps) => {
                 {caseData.partyRole === "plaintiff" && (
                   <>
                     <div>
-                      <Label className="text-xs text-blue-600">Заявление о выписке исп. листа (ПИР «истец» кол. 16)</Label>
+                      <Label className="text-xs text-blue-600">Дата направления в суд заявления о выписке исполнительного листа</Label>
                       <Textarea className="mt-1 min-h-[50px]" value={litWritReq} onChange={(e) => setLitWritReq(e.target.value)} disabled={!canEdit || isRestricted} />
                     </div>
                     <div>
-                      <Label className="text-xs text-blue-600">Сопроводительное письмо суда (ПИР «истец» кол. 17)</Label>
+                      <Label className="text-xs text-blue-600">Сопроводительного письма суда о направлении исполнительного листа</Label>
                       <Textarea className="mt-1 min-h-[50px]" value={litWritDisp} onChange={(e) => setLitWritDisp(e.target.value)} disabled={!canEdit || isRestricted} />
                     </div>
                     <div>
-                      <Label className="text-xs text-blue-600">Документ об исполнении (ПИР «истец» кол. 18)</Label>
+                      <Label className="text-xs text-blue-600">Дата и № документа, подтверждающего исполнение</Label>
                       <Textarea className="mt-1 min-h-[50px]" value={litExecProof} onChange={(e) => setLitExecProof(e.target.value)} disabled={!canEdit || isRestricted} />
                     </div>
                   </>
@@ -1304,25 +1410,25 @@ const CaseDetail = ({ caseId, onBack }: CaseDetailProps) => {
                               newDocumentTitle.trim() ||
                               (pendingFile ? pendingFile.name.replace(/\.[^/.]+$/, "") : "") ||
                               (pendingFile?.name ?? "");
-                            if (!titleStem.trim()) return;
+                            if (!pendingFile || !titleStem.trim()) return;
+                            const body = new FormData();
+                            body.append("title", titleStem);
+                            body.append("file", pendingFile);
                             setSavingDoc(true);
                             try {
                               const res = await fetch(
                                 `/api/v1/cases/${encodeURIComponent(caseId)}/documents`,
                                 {
                                   method: "POST",
-                                  headers: apiJsonHeaders(),
-                                  body: JSON.stringify({
-                                    title: titleStem,
-                                    fileName: pendingFile?.name ?? null,
-                                  }),
+                                  headers: apiAuthHeaders(),
+                                  body,
                                 },
                               );
                               if (!res.ok) {
                                 let msg = `Ошибка ${res.status}`;
                                 try {
-                                  const j = (await res.json()) as { message?: string };
-                                  if (j?.message) msg = j.message;
+                                  const j = (await res.json()) as { detail?: string; message?: string };
+                                  msg = j.detail || j.message || msg;
                                 } catch {
                                   /* ignore */
                                 }
@@ -1332,8 +1438,8 @@ const CaseDetail = ({ caseId, onBack }: CaseDetailProps) => {
                               setPendingFile(null);
                               await qc.invalidateQueries({ queryKey: ["cases"] });
                               toast({
-                                title: "Документ сохранён",
-                                description: "Запись хранится в базе данных и будет видна после обновления списка.",
+                                title: "Документ прикреплён",
+                                description: "Файл сохранён в деле и доступен для скачивания.",
                               });
                             } catch (e) {
                               toast({
@@ -1347,7 +1453,7 @@ const CaseDetail = ({ caseId, onBack }: CaseDetailProps) => {
                           })();
                         }}
                         className="bg-[hsl(192,72%,47%)] hover:bg-[hsl(192,72%,42%)] whitespace-nowrap"
-                        disabled={(!newDocumentTitle.trim() && !pendingFile) || savingDoc}
+                        disabled={!pendingFile || savingDoc}
                       >
                         {savingDoc ? "Сохранение…" : "Сохранить"}
                       </Button>
@@ -1355,8 +1461,8 @@ const CaseDetail = ({ caseId, onBack }: CaseDetailProps) => {
                   </div>
                   {pendingFile && (
                     <p className="text-xs text-blue-600">
-                      Выбран файл: <span className="font-medium text-blue-900">{pendingFile.name}</span> — бинарная
-                      загрузка в хранилище позже; в базу сохраняются название и привязка к делу.
+                      Выбран файл: <span className="font-medium text-blue-900">{pendingFile.name}</span>
+                      {formatFileSize(pendingFile.size) ? ` · ${formatFileSize(pendingFile.size)}` : ""}
                     </p>
                   )}
                 </div>
@@ -1375,6 +1481,7 @@ const CaseDetail = ({ caseId, onBack }: CaseDetailProps) => {
                   <div className="flex-1 min-w-0">Название</div>
                   <div className="w-24 shrink-0 hidden sm:block">Дата</div>
                   <div className="w-32 shrink-0 hidden md:block">Автор</div>
+                  <div className="w-10 shrink-0 text-center" aria-hidden />
                   {showDocumentDeleteColumn && <div className="w-10 shrink-0 text-center" aria-hidden />}
                 </div>
                 <div className="divide-y divide-blue-50">
@@ -1385,12 +1492,32 @@ const CaseDetail = ({ caseId, onBack }: CaseDetailProps) => {
                     >
                       <div className="flex-1 min-w-0 font-medium text-blue-900 flex items-center gap-2">
                         <FileText className="w-4 h-4 text-blue-400 shrink-0" />
-                        <span className="truncate">{doc.title}</span>
+                        <div className="min-w-0">
+                          <div className="truncate">{doc.title}</div>
+                          {(doc.fileName || doc.sizeBytes) && (
+                            <div className="text-xs font-normal text-blue-500 truncate">
+                              {doc.fileName}
+                              {doc.fileName && doc.sizeBytes ? " · " : ""}
+                              {formatFileSize(doc.sizeBytes)}
+                            </div>
+                          )}
+                        </div>
                       </div>
                       <div className="w-24 shrink-0 text-blue-600 text-xs sm:text-sm tabular-nums hidden sm:block">
                         {doc.uploadDate}
                       </div>
                       <div className="w-32 shrink-0 text-blue-600 text-xs truncate hidden md:block">{doc.author}</div>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="h-9 w-9 shrink-0 text-blue-600 hover:text-blue-700 hover:bg-blue-50"
+                        aria-label="Скачать документ"
+                        disabled={!doc.downloadUrl}
+                        onClick={() => void downloadDocument(doc)}
+                      >
+                        <Download className="h-4 w-4" />
+                      </Button>
                       {canUserDeleteDocument(doc) && (
                         <Button
                           type="button"
@@ -1423,7 +1550,7 @@ const CaseDetail = ({ caseId, onBack }: CaseDetailProps) => {
                       ? "Документ будет убран из списка."
                       : !canConfirmDocumentDelete
                         ? "У вас нет прав на удаление этого документа (только автор или директор)."
-                        : `«${docPendingDelete.title}» будет убран из списка в этом сеансе. После перезагрузки страницы данные снова придут с сервера, если документ был в базе.`}
+                        : `«${docPendingDelete.title}» будет удалён из дела вместе с прикреплённым файлом.`}
                   </AlertDialogDescription>
                 </AlertDialogHeader>
                 <AlertDialogFooter>

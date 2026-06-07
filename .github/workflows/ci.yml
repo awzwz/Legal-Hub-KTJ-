@@ -67,6 +67,9 @@ jobs:
         # запускаются отдельно (требуют поднятой инфры + xlsx-шаблонов).
         run: pytest -q -m "not integration and not excel_template"
 
+      - name: Test (integration)
+        run: pytest -q -m integration
+
   frontend:
     name: Frontend (lint + vitest)
     runs-on: ubuntu-latest
@@ -86,9 +89,6 @@ jobs:
         run: npm ci
 
       - name: Lint
-        # Lint остаётся информативным, но не валит CI из-за shadcn-boilerplate
-        # (interface X extends Y, require() в tailwind.config). Тесты решают.
-        continue-on-error: true
         run: npm run lint --if-present
 
       - name: Test

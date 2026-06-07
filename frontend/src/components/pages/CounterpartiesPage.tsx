@@ -83,14 +83,10 @@ const CounterpartiesPage = ({ onCaseClick }: CounterpartiesPageProps) => {
       });
   }, [counterparties, search, filterBy, sortBy]);
 
+  const normalizeName = (s: string) => (s || "").trim().toLowerCase().replace(/\s+/g, " ");
   const detailCP = detailId ? counterparties.find(cp => cp.id === detailId) : null;
   const detailCases = detailCP
-    ? userCases.filter(c => {
-        const matchesCompany = detailCP.bin 
-          ? c.companyBIN === detailCP.bin 
-          : (c.company === detailCP.name && !c.companyBIN);
-        return matchesCompany && (canViewAll || c.branch === user.branch);
-      })
+    ? userCases.filter(c => normalizeName(c.company) === detailCP.id && (canViewAll || c.branch === user.branch))
     : [];
 
   return (
@@ -160,7 +156,7 @@ const CounterpartiesPage = ({ onCaseClick }: CounterpartiesPageProps) => {
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <input
             type="text"
-            placeholder="Поиск по названию или БИН..."
+            placeholder="По наименованию или БИН*"
             value={search}
             onChange={e => setSearch(e.target.value)}
             className="w-full pl-9 pr-4 py-2 text-sm rounded-md bg-muted border-0 outline-none focus:ring-2 focus:ring-ring placeholder:text-muted-foreground"
@@ -171,8 +167,8 @@ const CounterpartiesPage = ({ onCaseClick }: CounterpartiesPageProps) => {
           <SelectContent>
             <SelectItem value="all">Все контрагенты</SelectItem>
             <SelectItem value="with_debt">С остатком долга</SelectItem>
-            <SelectItem value="with_active">С активными делами</SelectItem>
-            <SelectItem value="paid_off">Полностью погасили</SelectItem>
+            <SelectItem value="with_active">Находящиеся на рассмотрении</SelectItem>
+            <SelectItem value="paid_off">Исполнено в полном объёме</SelectItem>
           </SelectContent>
         </Select>
         <Select value={sortBy} onValueChange={v => setSortBy(v as SortKey)}>
@@ -266,7 +262,7 @@ const CounterpartiesPage = ({ onCaseClick }: CounterpartiesPageProps) => {
 
                 {isExpanded && (
                   <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} className="mt-3 pt-3 border-t space-y-2">
-                    {userCases.filter(c => (cp.bin ? c.companyBIN === cp.bin : (c.company === cp.name && !c.companyBIN)) && (canViewAll || c.branch === user.branch)).map(c => (
+                    {userCases.filter(c => normalizeName(c.company) === cp.id && (canViewAll || c.branch === user.branch)).map(c => (
                       <div
                         key={c.id}
                         className="flex items-center justify-between text-sm p-2 rounded-md hover:bg-muted transition-colors cursor-pointer"

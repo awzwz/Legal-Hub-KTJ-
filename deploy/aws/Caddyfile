@@ -12,7 +12,7 @@
 }
 
 {$LEGALHUB_DOMAIN} {
-    # Ограничение по IP (переменная SITE_ALLOWED_IPS в compose, по умолчанию 0.0.0.0/0 ::/0 = все).
+    # Ограничение по IP: SITE_ALLOWED_IPS обязателен в production compose.
     # Путь ACME не трогаем — иначе Let's Encrypt не продлит сертификат.
     @forbidden {
         not path /.well-known/acme-challenge*
